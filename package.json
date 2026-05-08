@@ -1,0 +1,30 @@
+{
+  "name": "seismic-audio-prototype",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "vite --host 0.0.0.0",
+    "build": "vite build",
+    "preview": "vite preview --host 0.0.0.0",
+    "check": "svelte-kit sync && svelte-check --tsconfig ./tsconfig.json",
+    "bridge": "tsx bridge/server.ts",
+    "show": "npm-run-all --parallel bridge dev",
+    "smoke:browser": "tsx scripts/browser-smoke.ts"
+  },
+  "devDependencies": {
+    "@sveltejs/adapter-static": "latest",
+    "@sveltejs/kit": "latest",
+    "@sveltejs/vite-plugin-svelte": "latest",
+    "@types/node": "latest",
+    "@types/ws": "latest",
+    "npm-run-all": "latest",
+    "playwright": "^1.59.1",
+    "svelte": "latest",
+    "svelte-check": "latest",
+    "tsx": "latest",
+    "typescript": "latest",
+    "vite": "latest",
+    "ws": "latest"
+  }
+}

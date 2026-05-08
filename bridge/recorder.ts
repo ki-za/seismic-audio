@@ -1,0 +1,90 @@
+import type { AudioWindow, BridgeStatus, RenderQuality } from '../src/lib/types';
+
+type ChannelBuffer = {
+	samples: number[];
+	latestTimestampMs: number | null;
+};
+
+export class RollingRecorder {
+	readonly startedAtMs = Date.now();
+	readonly sourceSampleRate: number;
+	readonly maxSamples: number;
+	readonly channels = new Map<string, ChannelBuffer>();
+
+	constructor(options: { sourceSampleRate?: number; maxHours?: number } = {}) {
+		this.sourceSampleRate = options.sourceSampleRate ?? 100;
+		this.maxSamples = Math.floor((options.maxHours ?? 24) * 60 * 60 * this.sourceSampleRate);
+	}
+
+	ingest(channel: string, timestampMs: number, samples: number[]) {
+		const buffer = this.channels.get(channel) ?? { samples: [], latestTimestampMs: null };
+		buffer.samples.push(...samples);
+		if (buffer.samples.length > this.maxSamples) {
+			buffer.samples.splice(0, buffer.samples.length - this.maxSamples);
+		}
+		buffer.latestTimestampMs = timestampMs;
+		this.channels.set(channel, buffer);
+	}
+
+	status(mode: 'synthetic' | 'udp', udpPort: number): BridgeStatus {
+		let samplesStored = 0;
+		let latestTimestampMs: number | null = null;
+		for (const buffer of this.channels.values()) {
+			samplesStored = Math.max(samplesStored, buffer.samples.length);
+			latestTimestampMs = Math.max(latestTimestampMs ?? 0, buffer.latestTimestampMs ?? 0);
+		}
+
+		return {
+			mode,
+			udpPort,
+			channels: [...this.channels.keys()],
+			samplesStored,
+			secondsStored: samplesStored / this.sourceSampleRate,
+			latestTimestampMs,
+			startedAtMs: this.startedAtMs
+		};
+	}
+
+	makeWindow(options: { channel?: string; windowSeconds: number; playbackSeconds: number; quality?: RenderQuality }): AudioWindow {
+		const channel = options.channel ?? this.channels.keys().next().value ?? 'SYN';
+		const buffer = this.channels.get(channel);
+		const samplesNeeded = Math.floor(options.windowSeconds * this.sourceSampleRate);
+		const source = buffer?.samples ?? [];
+		const selected = source.slice(Math.max(0, source.length - samplesNeeded));
+		const renderedSampleRate = chooseRenderedSampleRate(options.playbackSeconds, options.quality ?? 'balanced');
+		const outputCount = Math.max(1, Math.floor(options.playbackSeconds * renderedSampleRate));
+		const compressed = resample(selected, outputCount);
+
+		return {
+			channel,
+			windowSeconds: options.windowSeconds,
+			playbackSeconds: options.playbackSeconds,
+			sourceSampleRate: this.sourceSampleRate,
+			renderedSampleRate,
+			samples: compressed,
+			availableSeconds: source.length / this.sourceSampleRate
+		};
+	}
+}
+
+function chooseRenderedSampleRate(playbackSeconds: number, quality: RenderQuality): number {
+	if (quality === 'studio') return 48_000;
+	if (quality === 'installation-safe') return playbackSeconds >= 300 ? 12_000 : 32_000;
+	return playbackSeconds >= 300 ? 16_000 : 48_000;
+}
+
+function resample(input: number[], outputCount: number): number[] {
+	if (input.length === 0) return new Array(outputCount).fill(0);
+	if (input.length === 1) return new Array(outputCount).fill(input[0]);
+
+	const output = new Array<number>(outputCount);
+	const scale = (input.length - 1) / Math.max(1, outputCount - 1);
+	for (let i = 0; i < outputCount; i += 1) {
+		const pos = i * scale;
+		const lo = Math.floor(pos);
+		const hi = Math.min(input.length - 1, lo + 1);
+		const frac = pos - lo;
+		output[i] = input[lo] * (1 - frac) + input[hi] * frac;
+	}
+	return output;
+}
