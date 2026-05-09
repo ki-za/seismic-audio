@@ -10,7 +10,8 @@
     "check": "svelte-kit sync && svelte-check --tsconfig ./tsconfig.json",
     "bridge": "tsx bridge/server.ts",
     "show": "npm-run-all --parallel bridge dev",
-    "smoke:browser": "tsx scripts/browser-smoke.ts"
+    "smoke:browser": "tsx scripts/browser-smoke.ts",
+    "diagnose": "tsx scripts/run-diagnostics.ts"
   },
   "devDependencies": {
     "@sveltejs/adapter-static": "latest",
@@ -26,5 +27,8 @@
     "typescript": "latest",
     "vite": "latest",
     "ws": "latest"
+  },
+  "dependencies": {
+    "seisplotjs": "^3.2.2"
   }
 }

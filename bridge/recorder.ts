@@ -62,18 +62,45 @@ export class RollingRecorder {
 			sourceSampleRate: this.sourceSampleRate,
 			renderedSampleRate,
 			samples: compressed,
-			availableSeconds: source.length / this.sourceSampleRate
+			availableSeconds: source.length / this.sourceSampleRate,
+			source: 'bridge',
+			metadata: {
+				loadedAtISO: new Date().toISOString(),
+				actualChannel: channel,
+				requestedChannel: options.channel ?? channel
+			},
+			metrics: measureSamples(compressed, renderedSampleRate)
 		};
 	}
 }
 
-function chooseRenderedSampleRate(playbackSeconds: number, quality: RenderQuality): number {
+export function chooseRenderedSampleRate(playbackSeconds: number, quality: RenderQuality): number {
 	if (quality === 'studio') return 48_000;
 	if (quality === 'installation-safe') return playbackSeconds >= 300 ? 12_000 : 32_000;
 	return playbackSeconds >= 300 ? 16_000 : 48_000;
 }
 
-function resample(input: number[], outputCount: number): number[] {
+function measureSamples(samples: ArrayLike<number>, sampleRate: number) {
+	let sum = 0;
+	let squares = 0;
+	let peak = 0;
+	for (let i = 0; i < samples.length; i += 1) {
+		const value = samples[i];
+		sum += value;
+		squares += value * value;
+		peak = Math.max(peak, Math.abs(value));
+	}
+	return {
+		sampleCount: samples.length,
+		sampleRate,
+		durationSeconds: sampleRate ? samples.length / sampleRate : 0,
+		rms: samples.length ? Math.sqrt(squares / samples.length) : 0,
+		peak,
+		mean: samples.length ? sum / samples.length : 0
+	};
+}
+
+export function resample(input: ArrayLike<number>, outputCount: number): number[] {
 	if (input.length === 0) return new Array(outputCount).fill(0);
 	if (input.length === 1) return new Array(outputCount).fill(input[0]);
 
