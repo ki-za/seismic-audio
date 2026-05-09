@@ -2,7 +2,7 @@ import { createBrowserAudioPlayer, browserAudioRenderer, browserFileDownloader }
 import { loadAudioWindow, makeExportName, makeExportMetadata, playAudioWindow, exportAudioWindow } from '$lib/application/seismic-audio-session';
 import { isAppError } from '$lib/core/errors';
 import { buildAudioSettingsSnapshot, buildRequestKey, fingerprintAudioSettings, isStale } from '$lib/domain/audio-state';
-import { bridgeAudioWindowSource } from '$lib/data/bridge';
+import { bridgeAudioWindowSource } from '$lib/adapters/bridge-client';
 import type { AudioPlayer, AudioRenderer, AudioWindowSource, FileDownloader } from '$lib/ports/audio';
 import type { AudioWindow, CompressionSettings, ListeningFocus, RenderQuality, SoundMode } from '$lib/types';
 
