@@ -58,9 +58,13 @@ export async function exportAudioWindow(command: {
 	listeningFocus: ListeningFocus;
 	wavFilename: string;
 	metadataFilename: string;
-	metadataBlob: Blob;
+	metadata: unknown;
 }): Promise<void> {
-	const buffer = await command.renderer.renderProcessedSeismicBuffer(command.window, command.soundMode, command.compression, command.listeningFocus);
-	command.downloader.downloadBlob(command.renderer.audioBufferToWavBlob(buffer), command.wavFilename);
-	command.downloader.downloadBlob(command.metadataBlob, command.metadataFilename);
+	const wavFile = await command.renderer.renderWavFile(command.window, command.soundMode, command.compression, command.listeningFocus, command.wavFilename);
+	command.downloader.downloadFile(wavFile);
+	command.downloader.downloadFile({
+		filename: command.metadataFilename,
+		content: JSON.stringify(command.metadata, null, 2),
+		contentType: 'application/json'
+	});
 }

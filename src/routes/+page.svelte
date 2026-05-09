@@ -155,7 +155,7 @@
 				listeningFocus,
 				wavFilename: makeExportName(audioWindow, 'wav'),
 				metadataFilename: makeExportName(audioWindow, 'json'),
-				metadataBlob: makeMetadataBlob(audioWindow)
+				metadata: makeExportMetadata(audioWindow)
 			});
 		} catch (caught) {
 			error = {
@@ -209,37 +209,31 @@
 		return `seismic-${station}-${channel}-${window.windowSeconds}s-to-${window.playbackSeconds}s-${soundMode}-${renderQuality}.${extension}`;
 	}
 
-	function makeMetadataBlob(window: AudioWindow) {
-		return new Blob([
-			JSON.stringify(
-				{
-					source: window.source ?? 'bridge',
-					network: window.network,
-					station: window.station,
-					location: window.location,
-					channel: window.channel,
-					startISO: window.startISO,
-					endISO: window.endISO,
-					windowSeconds: window.windowSeconds,
-					playbackSeconds: window.playbackSeconds,
-					availableSeconds: window.availableSeconds,
-					sourceSampleRate: window.sourceSampleRate,
-					renderedSampleRate: window.renderedSampleRate,
-					soundMode,
-					renderQuality,
-					listeningFocus,
-					compression,
-					loadedWindowId,
-					audioSettingsFingerprint: selectedFingerprint,
-					renderMetrics: window.metrics ?? null,
-					loadMetadata: window.metadata,
-					processing: ['linear resample to playback duration', 'mean removal', '98th-percentile normalization', 'edge fade', 'high-pass', 'low-pass', 'tanh saturation', 'dynamics compression', 'gain'],
-					exportedAtISO: new Date().toISOString()
-				},
-				null,
-				2
-			)
-		], { type: 'application/json' });
+	function makeExportMetadata(window: AudioWindow) {
+		return {
+			source: window.source ?? 'bridge',
+			network: window.network,
+			station: window.station,
+			location: window.location,
+			channel: window.channel,
+			startISO: window.startISO,
+			endISO: window.endISO,
+			windowSeconds: window.windowSeconds,
+			playbackSeconds: window.playbackSeconds,
+			availableSeconds: window.availableSeconds,
+			sourceSampleRate: window.sourceSampleRate,
+			renderedSampleRate: window.renderedSampleRate,
+			soundMode,
+			renderQuality,
+			listeningFocus,
+			compression,
+			loadedWindowId,
+			audioSettingsFingerprint: selectedFingerprint,
+			renderMetrics: window.metrics ?? null,
+			loadMetadata: window.metadata,
+			processing: ['linear resample to playback duration', 'mean removal', '98th-percentile normalization', 'edge fade', 'high-pass', 'low-pass', 'tanh saturation', 'dynamics compression', 'gain'],
+			exportedAtISO: new Date().toISOString()
+		};
 	}
 </script>
 

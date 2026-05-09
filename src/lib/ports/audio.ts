@@ -21,11 +21,16 @@ export type AudioPlayer = {
 	stop(): void;
 };
 
+export type DownloadableFile = {
+	filename: string;
+	content: ArrayBuffer | string;
+	contentType: string;
+};
+
 export type AudioRenderer = {
-	renderProcessedSeismicBuffer(window: AudioWindow, mode: SoundMode, compression: CompressionSettings, focus: ListeningFocus): Promise<AudioBuffer>;
-	audioBufferToWavBlob(buffer: AudioBuffer): Blob;
+	renderWavFile(window: AudioWindow, mode: SoundMode, compression: CompressionSettings, focus: ListeningFocus, filename: string): Promise<DownloadableFile>;
 };
 
 export type FileDownloader = {
-	downloadBlob(blob: Blob, filename: string): void;
+	downloadFile(file: DownloadableFile): void;
 };
