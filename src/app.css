@@ -63,6 +63,8 @@ h1 { max-width: 11ch; margin: 0; font-size: clamp(3.5rem, 10vw, 8.5rem); line-he
 .station-list strong, .station-list span { display: block; }
 .station-list span, .readout { color: #c8bda9; font-size: .82rem; }
 .readout { margin-top: .45rem !important; color: #8f806e !important; }
+.readout.warn { color: #e7c88f !important; }
+.readout.error { color: #ffb4a8 !important; }
 .knobs { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: .65rem; }
 .knobs label { display: grid; gap: .3rem; color: #c8bda9; font-size: .82rem; }
 .knobs input { width: 100%; accent-color: #f0b76a; }

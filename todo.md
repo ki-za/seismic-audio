@@ -12,10 +12,12 @@
 - application/seismic-audio-session.ts — SelectProvider, CompareAudioSettings, advanceLoadState
 - composition/main.ts — wired new exports
 - scripts/domain-diag.ts — unit diagnostics
+- Committed: 50a06cb feat(domain): add ProviderId, StationId, NSLC, LoadState value objects
 
-## ❌ Tier 3 — UI alignment
+## ✅ Tier 3 — UI alignment
 - Build Provider selector (Local Bridge / Raspberry Shake Archive)
 - Build Loaded Evidence panel (NSLC, range, render, audio state)
-- Dynamic station status tracking (untested/failed/loaded/live)
 - Wire selectProvider, compareAudioSettings into +page.svelte
 - Wire LoadState machine into +page.svelte loadedState derived
+- Settings comparison warning in evidence panel
+- Committed: 3d209d7 feat(ui): wire Provider selector, LoadState machine, settings comparison

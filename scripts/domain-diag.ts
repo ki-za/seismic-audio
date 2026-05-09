@@ -1,5 +1,5 @@
-// ── Tier 2 Domain Diagnostics ──
-// Pure unit-level checks for the new value objects and state machine.
+// ── Tier 2–3 Domain Diagnostics ──
+// Pure unit-level checks for value objects, state machine, use cases.
 // Run: npx tsx scripts/domain-diag.ts
 
 import { providerFromStationId, providerLabel, isArchiveProvider, type ProviderId } from '../src/lib/domain/provider-id';
@@ -153,6 +153,42 @@ assert('advance fail → failed', advFail.state === 'failed' && advFail.error ==
 console.log('\n📦 getStationNSLC');
 assert('RD432 has NSLC', getStationNSLC('RD432')?.channel === 'EHZ');
 assert('local has no NSLC', getStationNSLC('local') === null);
+
+// ── Tier 3: UI flow simulation ──
+
+console.log('\n📦 Tier 3: UI flow simulation');
+// Simulate: user selects station, loads, then changes settings
+const initial = initialLoadState();
+assert('start idle', initial.state === 'idle');
+
+const afterLoading = transitionLoadState(initial, { kind: 'START_LOAD' });
+assert('→ loading', afterLoading.state === 'loading');
+
+const afterSuccess = transitionLoadState(afterLoading, { kind: 'LOAD_SUCCEEDED', requestedChannel: 'EHZ', actualChannel: 'EHZ' });
+assert('→ loaded', afterSuccess.state === 'loaded');
+
+// User changes soundMode — settings comparison should detect it
+const loadedSettings: AudioSettingsSnapshot = {
+	soundMode: 'soft',
+	listeningFocus: 'gentle',
+	compression: { thresholdDb: -18, ratio: 4, attackMs: 5, releaseMs: 90, makeupDb: 3 },
+	renderQuality: 'balanced',
+	playbackSeconds: 60,
+	renderedSampleRate: 48000
+};
+const currentSettings: AudioSettingsSnapshot = { ...loadedSettings, soundMode: 'raw' };
+const comparison = compareAudioSettings(currentSettings, loadedSettings);
+assert('settings changed detected', comparison.anyChanged && comparison.soundModeChanged);
+
+// LoadState responds to settings change
+const afterSettingsChange = transitionLoadState(afterSuccess, { kind: 'SETTINGS_CHANGED' });
+assert('→ stale after settings change', afterSettingsChange.state === 'stale');
+
+// Stale state triggers reload, which succeeds
+const afterReload = transitionLoadState(afterSettingsChange, { kind: 'START_LOAD' });
+assert('stale → loading on reload', afterReload.state === 'loading');
+const afterReloadOk = transitionLoadState(afterReload, { kind: 'LOAD_SUCCEEDED', requestedChannel: 'EHZ', actualChannel: 'EHZ' });
+assert('→ loaded again', afterReloadOk.state === 'loaded');
 
 // ── Summary ──
 

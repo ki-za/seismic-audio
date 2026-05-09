@@ -1,6 +1,9 @@
 <script lang="ts">
-	import { isAppError, buildAudioSettingsSnapshot, buildRequestKey, fingerprintAudioSettings, isStale, getAudioPlayer, getBridgeStatus, connectBridgeStatus, loadWindow, play, exportWav, makeExportName, makeExportMetadata } from '$lib/composition/main';
+	import { isAppError, buildAudioSettingsSnapshot, buildRequestKey, fingerprintAudioSettings, getAudioPlayer, getBridgeStatus, connectBridgeStatus, loadWindow, play, exportWav, makeExportName, makeExportMetadata, selectProvider, compareAudioSettings, advanceLoadState } from '$lib/composition/main';
+	import { initialLoadState, loadStateLabel } from '$lib/domain/load-state';
 	import type { AppError } from '$lib/core/errors';
+	import type { LoadStateSnapshot } from '$lib/domain/load-state';
+	import type { ProviderInfo, SettingsComparison } from '$lib/composition/main';
 	import type { AudioWindow, BridgeStatus, CompressionSettings, ListeningFocus, PlaybackChoice, RenderQuality, SoundMode, StationChoice, WindowChoice } from '$lib/types';
 
 	const windows: WindowChoice[] = [
@@ -56,8 +59,10 @@
 	let loadedRequestKey = $state<string | null>(null);
 	let loadedWindowId = $state<string | null>(null);
 	let loadedFingerprint = $state<string | null>(null);
+	let loadedSettingsSnapshot = $state<ReturnType<typeof buildAudioSettingsSnapshot> | null>(null);
 	let activeFingerprint = $state<string | null>(null);
 	let isExporting = $state(false);
+	let loadState = $state<LoadStateSnapshot>(initialLoadState());
 
 	const player = getAudioPlayer();
 	player.setLevelCallback((level) => (audioLevel = level));
@@ -68,12 +73,20 @@
 	const compressionText = $derived(`${selectedWindow.label} → ${selectedPlayback.label}`);
 	const availabilityText = $derived(selectedStation.id === 'local' ? (status ? formatDuration(status.secondsStored) : 'no data yet') : 'archive request uses now - 35 min');
 	const bridgeText = $derived(status ? `${status.samplesStored.toLocaleString()} local samples · ${status.channels.join(', ') || 'no local channel yet'}` : 'waiting for bridge');
-	const activeChannel = $derived(selectedStation.id === 'local' ? (status?.channels[0] ?? selectedStation.channelHint) : selectedStation.channelHint);
+	const activeChannel = $derived(selectedStation.id === 'local' ? (status?.channels[0] ?? selectedStation.channelHint) : selectedStation.channelHint.split('.').pop() ?? selectedStation.channelHint);
 	const selectedQuality = $derived(renderQualities.find((choice) => choice.value === renderQuality) ?? renderQualities[1]);
 	const selectedRequestKey = $derived(buildRequestKey({ provider: selectedStation.id === 'local' ? 'bridge' : 'raspberryshake', stationId: selectedStation.id, channel: selectedStation.id === 'local' ? status?.channels[0] : undefined, windowSeconds: selectedWindowSeconds, playbackSeconds: selectedPlaybackSeconds, renderQuality }));
 	const selectedFingerprint = $derived(fingerprintAudioSettings(buildAudioSettingsSnapshot({ soundMode, listeningFocus, compression, renderQuality, playbackSeconds: selectedPlaybackSeconds, renderedSampleRate: lastAudioWindow?.renderedSampleRate ?? 0 })));
-	const loadedState = $derived(isLoading ? 'loading' : !lastAudioWindow ? 'untested' : isStale(selectedRequestKey, loadedRequestKey) ? 'stale' : lastAudioWindow.metadata?.requestedChannel && lastAudioWindow.metadata.requestedChannel !== lastAudioWindow.channel ? 'fallback' : 'loaded');
+	const loadedStateDerived = $derived(loadStateLabel(loadState.state));
+	const loadedState = $derived(isLoading ? 'loading' : loadState.state);
 	const soundState = $derived(!loadedFingerprint ? 'not loaded' : selectedFingerprint !== loadedFingerprint ? 'changed · replay to hear' : activeFingerprint === loadedFingerprint && isPlaying ? 'playing · applied' : 'loaded · ready');
+	const providerInfo = $derived(selectProvider(selectedStationId));
+	const settingsComparison: SettingsComparison = $derived(
+		compareAudioSettings(
+			buildAudioSettingsSnapshot({ soundMode, listeningFocus, compression, renderQuality, playbackSeconds: selectedPlaybackSeconds, renderedSampleRate: lastAudioWindow?.renderedSampleRate ?? 0 }),
+			loadedSettingsSnapshot
+		)
+	);
 
 	$effect(() => {
 		getBridgeStatus().then((next) => (status = next)).catch(() => (connection = 'offline'));
@@ -83,6 +96,7 @@
 	async function loadWindowAction() {
 		error = null;
 		isLoading = true;
+		loadState = { state: 'loading' };
 		try {
 			const loaded = await loadWindow(selectedRequestKey, makeAudioRequest(), {
 				soundMode, listeningFocus, compression, renderQuality, playbackSeconds: selectedPlaybackSeconds
@@ -91,7 +105,17 @@
 			loadedRequestKey = loaded.requestKey;
 			loadedWindowId = loaded.windowId;
 			loadedFingerprint = loaded.settingsFingerprint;
+			loadedSettingsSnapshot = loaded.settingsSnapshot;
+			loadState = advanceLoadState(loadState, {
+				ok: true,
+				requestedChannel: activeChannel,
+				actualChannel: loaded.window.channel
+			});
 		} catch (caught) {
+			loadState = advanceLoadState(loadState, {
+				ok: false,
+				error: caught instanceof Error ? caught.message : String(caught)
+			});
 			error = isAppError(caught)
 				? caught
 				: {
@@ -108,7 +132,7 @@
 
 	async function playLoaded() {
 		error = null;
-		if (!lastAudioWindow || loadedState === 'stale') await loadWindowAction();
+		if (!lastAudioWindow || loadState.state === 'stale') await loadWindowAction();
 		if (!lastAudioWindow) return;
 		isPlaying = true;
 		try {
@@ -239,6 +263,15 @@
 
 		<div class="dashboard-grid">
 			<div class="group wide">
+				<p>Provider <small>{providerInfo.label}</small></p>
+				<div class="buttons">
+					<button class={providerInfo.id === 'bridge' ? 'selected' : ''} onclick={() => (selectedStationId = 'local')}>󰓅 Bridge</button>
+					<button class={providerInfo.id === 'raspberryshake' ? 'selected' : ''} onclick={() => (selectedStationId = stations[1]?.id ?? 'RD432')}>󰀂 Archive</button>
+				</div>
+				<p class="readout">{providerInfo.isArchive ? 'Archive uses data.raspberryshake.org, -35 min delay' : 'Local bridge buffer, rolling window'}</p>
+			</div>
+
+			<div class="group wide">
 				<p>Station / location <small>selected ≠ loaded</small></p>
 				<div class="station-list">
 					{#each stations as station (station.id)}
@@ -252,15 +285,26 @@
 			</div>
 
 			<div class="group wide evidence" data-testid="loaded-evidence" data-state={loadedState} data-fingerprint={selectedFingerprint} data-active-fingerprint={activeFingerprint ?? ''}>
-				<p>Loaded evidence <small>{loadedState}</small></p>
+				<p>Loaded evidence <small>{loadedStateDerived}</small></p>
 				{#if lastAudioWindow}
-					<p class="readout">Source: {lastAudioWindow.source ?? 'bridge'} · {lastAudioWindow.metadata?.requestHost ?? 'local bridge'}</p>
-					<p class="readout">Target: {lastAudioWindow.network ?? 'local'}.{lastAudioWindow.station ?? selectedStation.id}.{lastAudioWindow.location ?? '--'}.{lastAudioWindow.metadata?.requestedChannel ?? activeChannel}</p>
-					<p class="readout">Actual: {lastAudioWindow.network ?? 'local'}.{lastAudioWindow.station ?? selectedStation.id}.{lastAudioWindow.location ?? '--'}.{lastAudioWindow.channel}</p>
+					<p class="readout">Provider: {providerInfo.label}</p>
+					<p class="readout">NSLC: {lastAudioWindow.network ?? '--'}.{lastAudioWindow.station ?? selectedStation.id}.{lastAudioWindow.location ?? '--'}.{lastAudioWindow.channel}</p>
+					{#if lastAudioWindow.metadata?.requestedChannel && lastAudioWindow.metadata.requestedChannel !== lastAudioWindow.channel}
+						<p class="readout">Fallback: requested {lastAudioWindow.metadata.requestedChannel}, got {lastAudioWindow.channel}</p>
+					{/if}
 					<p class="readout">Range: {lastAudioWindow.startISO ?? 'rolling buffer'} → {lastAudioWindow.endISO ?? 'now'}</p>
-					<p class="readout">Render: {lastAudioWindow.renderedSampleRate.toLocaleString()} Hz · {lastAudioWindow.samples.length.toLocaleString()} samples</p>
-					<p class="readout">Metrics: RMS {lastAudioWindow.metrics?.rms.toFixed(4)} · Peak {lastAudioWindow.metrics?.peak.toFixed(4)}</p>
-					<p class="readout">Sound: {soundMode} · {listeningFocus} · {selectedFingerprint} · {soundState}</p>
+					<p class="readout">Render: {lastAudioWindow.renderedSampleRate.toLocaleString()} Hz · {lastAudioWindow.samples.length.toLocaleString()} samples · {(lastAudioWindow.samples.length / lastAudioWindow.renderedSampleRate).toFixed(1)}s</p>
+					<p class="readout">Metrics: RMS {lastAudioWindow.metrics?.rms.toFixed(4)} · Peak {lastAudioWindow.metrics?.peak.toFixed(4)} · ZCR {lastAudioWindow.metrics?.zeroCrossingRate?.toFixed(4) ?? '—'}</p>
+					<p class="readout">Sound: {soundMode} · {listeningFocus} · sig {selectedFingerprint} · {soundState}</p>
+					{#if settingsComparison.anyChanged}
+						<p class="readout warn">⚡ Settings changed: {settingsComparison.changedLabels.join(', ')} — replay to apply</p>
+					{/if}
+					{#if loadState.state === 'fallback'}
+						<p class="readout warn">⚠ Loaded via fallback channel</p>
+					{/if}
+					{#if loadState.error}
+						<p class="readout error">⛔ {loadState.error}</p>
+					{/if}
 					{#if lastAudioWindow.metadata?.attemptedChannels?.length}
 						<p class="readout">Tried: {lastAudioWindow.metadata.attemptedChannels.map((attempt) => `${attempt.channel}:${attempt.status}`).join(', ')}</p>
 					{/if}
