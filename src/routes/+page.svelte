@@ -1,6 +1,5 @@
 <script lang="ts">
-	import { buildAudioSettingsSnapshot, buildRequestKey, fingerprintAudioSettings, isStale } from '$lib/domain/audio-state';
-	import { isAppError, getAudioPlayer, getBridgeStatus, connectBridgeStatus, loadWindow, play, exportWav } from '$lib/composition/main';
+	import { isAppError, buildAudioSettingsSnapshot, buildRequestKey, fingerprintAudioSettings, isStale, getAudioPlayer, getBridgeStatus, connectBridgeStatus, loadWindow, play, exportWav, makeExportName, makeExportMetadata } from '$lib/composition/main';
 	import type { AppError } from '$lib/core/errors';
 	import type { AudioWindow, BridgeStatus, CompressionSettings, ListeningFocus, PlaybackChoice, RenderQuality, SoundMode, StationChoice, WindowChoice } from '$lib/types';
 
@@ -143,9 +142,31 @@
 				soundMode,
 				compression,
 				listeningFocus,
-				wavFilename: makeExportName(audioWindow, 'wav'),
-				metadataFilename: makeExportName(audioWindow, 'json'),
-				metadata: makeExportMetadata(audioWindow)
+				wavFilename: makeExportName({
+					stationId: selectedStation.id,
+					channel: audioWindow.channel,
+					windowSeconds: audioWindow.windowSeconds,
+					playbackSeconds: audioWindow.playbackSeconds,
+					soundMode,
+					renderQuality
+				}, 'wav'),
+				metadataFilename: makeExportName({
+					stationId: selectedStation.id,
+					channel: audioWindow.channel,
+					windowSeconds: audioWindow.windowSeconds,
+					playbackSeconds: audioWindow.playbackSeconds,
+					soundMode,
+					renderQuality
+				}, 'json'),
+				metadata: makeExportMetadata({
+					window: audioWindow,
+					soundMode,
+					renderQuality,
+					listeningFocus,
+					compression,
+					windowId: loadedWindowId ?? '',
+					settingsFingerprint: selectedFingerprint
+				})
 			});
 		} catch (caught) {
 			error = {
@@ -193,38 +214,6 @@
 		return `${(seconds / 3600).toFixed(1)} hr`;
 	}
 
-	function makeExportName(window: AudioWindow, extension: 'wav' | 'json') {
-		const channel = window.channel.replace(/[^a-z0-9_-]/gi, '-');
-		const station = window.station ?? selectedStation.id;
-		return `seismic-${station}-${channel}-${window.windowSeconds}s-to-${window.playbackSeconds}s-${soundMode}-${renderQuality}.${extension}`;
-	}
-
-	function makeExportMetadata(window: AudioWindow) {
-		return {
-			source: window.source ?? 'bridge',
-			network: window.network,
-			station: window.station,
-			location: window.location,
-			channel: window.channel,
-			startISO: window.startISO,
-			endISO: window.endISO,
-			windowSeconds: window.windowSeconds,
-			playbackSeconds: window.playbackSeconds,
-			availableSeconds: window.availableSeconds,
-			sourceSampleRate: window.sourceSampleRate,
-			renderedSampleRate: window.renderedSampleRate,
-			soundMode,
-			renderQuality,
-			listeningFocus,
-			compression,
-			loadedWindowId,
-			audioSettingsFingerprint: selectedFingerprint,
-			renderMetrics: window.metrics ?? null,
-			loadMetadata: window.metadata,
-			processing: ['linear resample to playback duration', 'mean removal', '98th-percentile normalization', 'edge fade', 'high-pass', 'low-pass', 'tanh saturation', 'dynamics compression', 'gain'],
-			exportedAtISO: new Date().toISOString()
-		};
-	}
 </script>
 
 <svelte:document onfullscreenchange={() => (showMode = Boolean(document.fullscreenElement))} />

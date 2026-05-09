@@ -1,6 +1,7 @@
 import { createBrowserAudioPlayer, browserAudioRenderer, browserFileDownloader } from '$lib/adapters/browser-audio';
-import { loadAudioWindow, playAudioWindow, exportAudioWindow } from '$lib/application/seismic-audio-session';
+import { loadAudioWindow, makeExportName, makeExportMetadata, playAudioWindow, exportAudioWindow } from '$lib/application/seismic-audio-session';
 import { isAppError } from '$lib/core/errors';
+import { buildAudioSettingsSnapshot, buildRequestKey, fingerprintAudioSettings, isStale } from '$lib/domain/audio-state';
 import { bridgeAudioWindowSource } from '$lib/data/bridge';
 import type { AudioPlayer, AudioRenderer, AudioWindowSource, FileDownloader } from '$lib/ports/audio';
 import type { AudioWindow, CompressionSettings, ListeningFocus, RenderQuality, SoundMode } from '$lib/types';
@@ -17,7 +18,8 @@ audioPlayer.setLevelCallback(() => {});
 
 // ── use cases ──
 
-export { isAppError };
+export { isAppError, buildAudioSettingsSnapshot, buildRequestKey, fingerprintAudioSettings, isStale, makeExportName, makeExportMetadata };
+export type { ExportNameInput, ExportMetadataInput } from '$lib/application/seismic-audio-session';
 export const getAudioPlayer = () => audioPlayer;
 export const getBridgeStatus = () => audioWindowSource.getStatus();
 export const connectBridgeStatus = (

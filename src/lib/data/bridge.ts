@@ -1,4 +1,4 @@
-import { appError, unknownError, type AppError } from '$lib/core/errors';
+import { appError, isAppError, unknownError, type AppError } from '$lib/core/errors';
 import type { AudioWindowSource, AudioWindowRequest } from '$lib/ports/audio';
 import type { AudioWindow, BridgeStatus } from '$lib/types';
 
@@ -64,10 +64,6 @@ export function connectStatus(onStatus: (status: BridgeStatus) => void, onState?
 	socket.onerror = () => onState?.('error');
 	socket.onmessage = (event) => onStatus(JSON.parse(event.data));
 	return () => socket.close();
-}
-
-export function isAppError(error: unknown): error is AppError {
-	return Boolean(error && typeof error === 'object' && 'code' in error && 'recovery' in error);
 }
 
 export const bridgeAudioWindowSource: AudioWindowSource = {
