@@ -1,7 +1,8 @@
 import type { AudioMetrics, AudioSettingsSnapshot, AudioWindow, CompressionSettings, ListeningFocus, RenderQuality, SoundMode } from '$lib/types';
+import type { ProviderId } from '$lib/domain/provider-id';
 
 export type AudioRequestKeyInput = {
-	provider: 'bridge' | 'raspberryshake';
+	provider: ProviderId;
 	stationId: string;
 	channel?: string;
 	windowSeconds: number;

@@ -1,4 +1,7 @@
 import { buildAudioSettingsSnapshot, buildWindowId, fingerprintAudioSettings, measureAudioSamples } from '$lib/domain/audio-state';
+import { transitionLoadState, type LoadStateSnapshot } from '$lib/domain/load-state';
+import { nslcForStation, type StationId } from '$lib/domain/station';
+import { isArchiveProvider, providerLabel, type ProviderId } from '$lib/domain/provider-id';
 import type { AudioPlayer, AudioRenderer, AudioWindowSource, FileDownloader } from '$lib/ports/audio';
 import type { AudioSettingsSnapshot, AudioWindow, CompressionSettings, ListeningFocus, RenderQuality, SoundMode } from '$lib/types';
 
@@ -118,4 +121,112 @@ export async function exportAudioWindow(command: {
 		content: JSON.stringify(command.metadata, null, 2),
 		contentType: 'application/json'
 	});
+}
+
+// ── Tier 2 use cases ──
+
+export type ProviderInfo = {
+	id: ProviderId;
+	label: string;
+	isArchive: boolean;
+};
+
+/**
+ * Return provider metadata for a given station id.
+ * Orchestrates domain value objects — no I/O.
+ */
+export function selectProvider(stationId: StationId): ProviderInfo {
+	const id = stationId === 'local' ? 'bridge' : 'raspberryshake';
+	return {
+		id,
+		label: providerLabel(id),
+		isArchive: isArchiveProvider(id)
+	};
+}
+
+export type SettingsComparison = {
+	soundModeChanged: boolean;
+	listeningFocusChanged: boolean;
+	compressionChanged: boolean;
+	renderQualityChanged: boolean;
+	playbackSecondsChanged: boolean;
+	anyChanged: boolean;
+	changedLabels: string[];
+};
+
+/**
+ * Compare two audio settings snapshots and return what changed.
+ * Pure — no I/O.
+ */
+export function compareAudioSettings(
+	current: AudioSettingsSnapshot,
+	loaded: AudioSettingsSnapshot | null
+): SettingsComparison {
+	if (!loaded) {
+		return {
+			soundModeChanged: false,
+			listeningFocusChanged: false,
+			compressionChanged: false,
+			renderQualityChanged: false,
+			playbackSecondsChanged: false,
+			anyChanged: false,
+			changedLabels: []
+		};
+	}
+
+	const changedLabels: string[] = [];
+
+	const soundModeChanged = current.soundMode !== loaded.soundMode;
+	if (soundModeChanged) changedLabels.push('sound mode');
+
+	const listeningFocusChanged = current.listeningFocus !== loaded.listeningFocus;
+	if (listeningFocusChanged) changedLabels.push('focus');
+
+	const compressionChanged =
+		current.compression.thresholdDb !== loaded.compression.thresholdDb ||
+		current.compression.ratio !== loaded.compression.ratio ||
+		current.compression.attackMs !== loaded.compression.attackMs ||
+		current.compression.releaseMs !== loaded.compression.releaseMs ||
+		current.compression.makeupDb !== loaded.compression.makeupDb;
+	if (compressionChanged) changedLabels.push('compression');
+
+	const renderQualityChanged = current.renderQuality !== loaded.renderQuality;
+	if (renderQualityChanged) changedLabels.push('quality');
+
+	const playbackSecondsChanged = current.playbackSeconds !== loaded.playbackSeconds;
+	if (playbackSecondsChanged) changedLabels.push('playback length');
+
+	return {
+		soundModeChanged,
+		listeningFocusChanged,
+		compressionChanged,
+		renderQualityChanged,
+		playbackSecondsChanged,
+		anyChanged: changedLabels.length > 0,
+		changedLabels
+	};
+}
+
+/**
+ * Advance the load state machine after an audio window load attempt.
+ */
+export function advanceLoadState(
+	prev: LoadStateSnapshot,
+	result: { ok: true; requestedChannel: string; actualChannel: string } | { ok: false; error: string }
+): LoadStateSnapshot {
+	if (result.ok) {
+		return transitionLoadState(prev, {
+			kind: 'LOAD_SUCCEEDED',
+			requestedChannel: result.requestedChannel,
+			actualChannel: result.actualChannel
+		});
+	}
+	return transitionLoadState(prev, { kind: 'LOAD_FAILED', error: result.error });
+}
+
+/**
+ * Get the NSLC for a station, if known.
+ */
+export function getStationNSLC(stationId: StationId) {
+	return nslcForStation(stationId);
 }

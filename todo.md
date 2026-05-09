@@ -1,24 +1,21 @@
-#  Hexagonal Cleanup Plan
+# TODO
 
-## Tier 1 — Clean what's there ✅ DONE
+## ✅ Tier 1 — Hexagonal cleanup
+- Extract DSP from sonifier.ts → domain/sonification.ts
+- Move bridge.ts from data/ → adapters/bridge-client.ts
+- Split types.ts → domain/types.ts (domain), lib/types.ts (cross-boundary DTOs)
 
-- [x] Extract DSP functions from `sonifier.ts` → `domain/sonification.ts`
-- [x] Move `data/bridge.ts` → `adapters/bridge-client.ts` + update imports
-- [x] Split `types.ts`: domain types → `domain/types.ts`, cross-boundary DTOs stay
+## ✅ Tier 2 — Domain value objects + use cases
+- domain/provider-id.ts — ProviderId value object
+- domain/station.ts — StationId + NSLC value objects
+- domain/load-state.ts — LoadState state machine
+- application/seismic-audio-session.ts — SelectProvider, CompareAudioSettings, advanceLoadState
+- composition/main.ts — wired new exports
+- scripts/domain-diag.ts — unit diagnostics
 
-## Tier 2 — Build missing domain (medium risk, high value)
-
-- [ ] Add domain value objects: `ProviderId`, `StationId`, `NSLC`, `AudioSettingsFingerprint`
-- [ ] Add `LoadState` state machine in domain
-- [ ] Implement `SelectProvider` use case in application
-- [ ] Implement `CompareAudioSettings` use case in application
-- [ ] Wire new use cases through `composition/main.ts`
-
-## Tier 3 — UI alignment (TECHNICAL_DESIGN.md)
-
-- [ ] Build Loaded Evidence panel in `+page.svelte`
-- [ ] Add Provider selector replacing implicit station=provider inference
-
-## 󰶻 Last verified
-
-npm run check ✅ 0 errors | npm run build ✅ success
+## ❌ Tier 3 — UI alignment
+- Build Provider selector (Local Bridge / Raspberry Shake Archive)
+- Build Loaded Evidence panel (NSLC, range, render, audio state)
+- Dynamic station status tracking (untested/failed/loaded/live)
+- Wire selectProvider, compareAudioSettings into +page.svelte
+- Wire LoadState machine into +page.svelte loadedState derived

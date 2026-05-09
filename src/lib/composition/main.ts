@@ -1,10 +1,13 @@
 import { createBrowserAudioPlayer, browserAudioRenderer, browserFileDownloader } from '$lib/adapters/browser-audio';
-import { loadAudioWindow, makeExportName, makeExportMetadata, playAudioWindow, exportAudioWindow } from '$lib/application/seismic-audio-session';
+import { loadAudioWindow, makeExportName, makeExportMetadata, playAudioWindow, exportAudioWindow, selectProvider, compareAudioSettings, advanceLoadState, getStationNSLC } from '$lib/application/seismic-audio-session';
 import { isAppError } from '$lib/core/errors';
 import { buildAudioSettingsSnapshot, buildRequestKey, fingerprintAudioSettings, isStale } from '$lib/domain/audio-state';
 import { bridgeAudioWindowSource } from '$lib/adapters/bridge-client';
 import type { AudioPlayer, AudioRenderer, AudioWindowSource, FileDownloader } from '$lib/ports/audio';
 import type { AudioWindow, CompressionSettings, ListeningFocus, RenderQuality, SoundMode } from '$lib/types';
+import { type LoadStateSnapshot, initialLoadState } from '$lib/domain/load-state';
+import { type ProviderId } from '$lib/domain/provider-id';
+import type { StationId } from '$lib/domain/station';
 
 // ── wired adapters (singleton scope) ──
 
@@ -18,8 +21,8 @@ audioPlayer.setLevelCallback(() => {});
 
 // ── use cases ──
 
-export { isAppError, buildAudioSettingsSnapshot, buildRequestKey, fingerprintAudioSettings, isStale, makeExportName, makeExportMetadata };
-export type { ExportNameInput, ExportMetadataInput } from '$lib/application/seismic-audio-session';
+export { isAppError, buildAudioSettingsSnapshot, buildRequestKey, fingerprintAudioSettings, isStale, makeExportName, makeExportMetadata, selectProvider, compareAudioSettings, advanceLoadState, getStationNSLC };
+export type { ExportNameInput, ExportMetadataInput, ProviderInfo, SettingsComparison } from '$lib/application/seismic-audio-session';
 export const getAudioPlayer = () => audioPlayer;
 export const getBridgeStatus = () => audioWindowSource.getStatus();
 export const connectBridgeStatus = (
