@@ -1,6 +1,4 @@
 import dgram from "node:dgram";
-import http from "node:http";
-import { WebSocketServer } from "ws";
 import { parseDatacastPacket } from "./datacast";
 import {
 	chooseRenderedSampleRate,
@@ -10,9 +8,9 @@ import {
 import { loadRaspberryShakeTrace } from "./raspberryshake";
 import { startSyntheticFeed } from "./synthetic";
 
-const udpPort  = Number.parseInt(process.env.UDP_PORT ?? "8888", 10);
-const httpPort = Number.parseInt(process.env.BRIDGE_PORT ?? "8787", 10);
-const mode     = (process.env.INPUT_MODE ?? "synthetic") as "synthetic" | "udp";
+const udpPort  = Number.parseInt(Bun.env.UDP_PORT ?? "8888", 10);
+const httpPort = Number.parseInt(Bun.env.BRIDGE_PORT ?? "8787", 10);
+const mode     = (Bun.env.INPUT_MODE ?? "synthetic") as "synthetic" | "udp";
 const recorder = new RollingRecorder({ sourceSampleRate: 100, maxHours: 72 });
 
 if (mode === "synthetic") {
@@ -33,90 +31,99 @@ if (mode === "synthetic") {
 	);
 }
 
-const server = http.createServer(async (request, response) => {
-	const url = new URL(request.url ?? "/", `http://${request.headers.host}`);
-	response.setHeader("Access-Control-Allow-Origin", "*");
+const cors = { "Access-Control-Allow-Origin": "*" };
 
-	if (url.pathname === "/status") {
-		return sendJson(response, recorder.status(mode, udpPort));
-	}
+const server = Bun.serve({
+	port: httpPort,
 
-	if (url.pathname === "/window") {
-		const windowSeconds = Number.parseFloat(
-			url.searchParams.get("windowSeconds") ?? "3600",
-		);
-		const playbackSeconds = Number.parseFloat(
-			url.searchParams.get("playbackSeconds") ?? "60",
-		);
-		const channel = url.searchParams.get("channel") ?? undefined;
-		const quality = parseQuality(url.searchParams.get("quality"));
-		return sendJson(
-			response,
-			recorder.makeWindow({ channel, windowSeconds, playbackSeconds, quality }),
-		);
-	}
+	fetch(request, server) {
+		if (server.upgrade(request)) return;
 
-	if (url.pathname === "/raspberryshake/window") {
-		try {
-			const station       = url.searchParams.get("station") ?? "RD432";
+		const url = new URL(request.url);
+
+		if (url.pathname === "/status") {
+			return Response.json(recorder.status(mode, udpPort), { headers: cors });
+		}
+
+		if (url.pathname === "/window") {
 			const windowSeconds = Number.parseFloat(
 				url.searchParams.get("windowSeconds") ?? "3600",
 			);
 			const playbackSeconds = Number.parseFloat(
 				url.searchParams.get("playbackSeconds") ?? "60",
 			);
-			const quality            = parseQuality(url.searchParams.get("quality"));
-			const trace              = await loadRaspberryShakeTrace({ station, windowSeconds });
-			const renderedSampleRate = chooseRenderedSampleRate(
-				playbackSeconds,
-				quality,
+			const channel = url.searchParams.get("channel") ?? undefined;
+			const quality = parseQuality(url.searchParams.get("quality"));
+			return Response.json(
+				recorder.makeWindow({ channel, windowSeconds, playbackSeconds, quality }),
+				{ headers: cors },
 			);
-			const outputCount = Math.max(
-				1,
-				Math.floor(playbackSeconds * renderedSampleRate),
-			);
-
-			const samples = resample(trace.samples, outputCount);
-			return sendJson(response, {
-				channel: trace.channel,
-				windowSeconds,
-				playbackSeconds,
-				sourceSampleRate: trace.sampleRate,
-				renderedSampleRate,
-				samples,
-				availableSeconds : trace.samples.length / trace.sampleRate,
-				network          : trace.network,
-				station          : trace.station,
-				location         : trace.location,
-				startISO         : trace.startISO,
-				endISO           : trace.endISO,
-				source           : "raspberryshake",
-				metadata         : trace.metadata,
-				metrics          : measureSamples(samples, renderedSampleRate),
-			});
-		} catch (error) {
-			response.statusCode = 502;
-			return sendJson(response, {
-				error: error instanceof Error ? error.message : String(error),
-			});
 		}
-	}
 
-	response.statusCode = 404;
-	response.end("not found");
+		if (url.pathname === "/raspberryshake/window") {
+			return handleRaspberryShakeWindow(url);
+		}
+
+		return new Response("not found", { status: 404, headers: cors });
+	},
+
+	websocket: {
+		open(ws)  { ws.subscribe("status"); },
+		close(ws) { ws.unsubscribe("status"); },
+	},
 });
 
-const wss = new WebSocketServer({ server });
 setInterval(() => {
 	const message = JSON.stringify(recorder.status(mode, udpPort));
-	for (const client of wss.clients) {
-		if (client.readyState === client.OPEN) client.send(message);
-	}
+	server.publish("status", message);
 }, 1000);
 
-server.listen(httpPort, () =>
-	console.log(`seismic bridge listening on http://localhost:${httpPort}`),
-);
+console.log(`seismic bridge listening on http://localhost:${httpPort}`);
+
+async function handleRaspberryShakeWindow(url: URL) {
+	try {
+		const station       = url.searchParams.get("station") ?? "RD432";
+		const windowSeconds = Number.parseFloat(
+			url.searchParams.get("windowSeconds") ?? "3600",
+		);
+		const playbackSeconds = Number.parseFloat(
+			url.searchParams.get("playbackSeconds") ?? "60",
+		);
+		const quality            = parseQuality(url.searchParams.get("quality"));
+		const trace              = await loadRaspberryShakeTrace({ station, windowSeconds });
+		const renderedSampleRate = chooseRenderedSampleRate(
+			playbackSeconds,
+			quality,
+		);
+		const outputCount = Math.max(
+			1,
+			Math.floor(playbackSeconds * renderedSampleRate),
+		);
+
+		const samples = resample(trace.samples, outputCount);
+		return Response.json({
+			channel: trace.channel,
+			windowSeconds,
+			playbackSeconds,
+			sourceSampleRate: trace.sampleRate,
+			renderedSampleRate,
+			samples,
+			availableSeconds : trace.samples.length / trace.sampleRate,
+			network          : trace.network,
+			station          : trace.station,
+			location         : trace.location,
+			startISO         : trace.startISO,
+			endISO           : trace.endISO,
+			source           : "raspberryshake",
+			metadata         : trace.metadata,
+			metrics          : measureSamples(samples, renderedSampleRate),
+		}, { headers: cors });
+	} catch (error) {
+		return Response.json({
+			error: error instanceof Error ? error.message : String(error),
+		}, { status: 502, headers: cors });
+	}
+}
 
 function parseQuality(value: string | null) {
 	if (
@@ -126,11 +133,6 @@ function parseQuality(value: string | null) {
 	)
 		return value;
 	return "balanced";
-}
-
-function sendJson(response: http.ServerResponse, data: unknown) {
-	response.setHeader("Content-Type", "application/json");
-	response.end(JSON.stringify(data));
 }
 
 function measureSamples(samples: ArrayLike<number>, sampleRate: number) {

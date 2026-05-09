@@ -1,6 +1,6 @@
 // ── Tier 2–3 Domain Diagnostics ──
 // Pure unit-level checks for value objects, state machine, use cases.
-// Run: npx tsx scripts/domain-diag.ts
+// Run: bun run scripts/domain-diag.ts
 
 import {
 	providerFromStationId,

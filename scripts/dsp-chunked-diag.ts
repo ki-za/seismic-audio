@@ -1,7 +1,7 @@
 // ── Chunked DSP smoke test ──
 // Verifies prepareSamplesChunked produces identical output to prepareSamples
 // and reports progress correctly.
-// Run: npx tsx scripts/dsp-chunked-diag.ts
+// Run: bun run scripts/dsp-chunked-diag.ts
 
 import {
 	prepareSamples,

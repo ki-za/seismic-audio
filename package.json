@@ -8,27 +8,24 @@
     "build": "vite build",
     "preview": "vite preview --host 0.0.0.0",
     "check": "svelte-kit sync && svelte-check --tsconfig ./tsconfig.json",
-    "bridge": "tsx bridge/server.ts",
-    "show": "npm-run-all --parallel bridge dev",
-    "smoke:browser": "tsx scripts/browser-smoke.ts",
-    "diagnose": "tsx scripts/run-diagnostics.ts",
-    "diagnose:dsp": "tsx scripts/dsp-chunked-diag.ts",
-    "diagnose:domain": "tsx scripts/domain-diag.ts"
+    "bridge": "bun run bridge/server.ts",
+    "show": "bun run bridge & bun run dev",
+    "smoke:browser": "bun run scripts/browser-smoke.ts",
+    "diagnose": "bun run scripts/run-diagnostics.ts",
+    "diagnose:dsp": "bun run scripts/dsp-chunked-diag.ts",
+    "diagnose:domain": "bun run scripts/domain-diag.ts"
   },
   "devDependencies": {
     "@sveltejs/adapter-static": "latest",
     "@sveltejs/kit": "latest",
     "@sveltejs/vite-plugin-svelte": "latest",
+    "@types/bun": "latest",
     "@types/node": "latest",
-    "@types/ws": "latest",
-    "npm-run-all": "latest",
     "playwright": "^1.59.1",
     "svelte": "latest",
     "svelte-check": "latest",
-    "tsx": "latest",
     "typescript": "latest",
-    "vite": "latest",
-    "ws": "latest"
+    "vite": "latest"
   },
   "dependencies": {
     "seisplotjs": "^3.2.2"

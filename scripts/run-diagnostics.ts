@@ -93,7 +93,7 @@ function summarizeWindow(window: {
 async function runSmoke() {
 	return new Promise<Record<string, unknown>>((resolve, reject) => {
 		let output  = "";
-		const child = spawn("npx", ["tsx", "scripts/browser-smoke.ts"], {
+		const child = spawn("bun", ["run", "scripts/browser-smoke.ts"], {
 			env: { ...process.env, APP_URL: appUrl },
 			stdio: ["ignore", "pipe", "pipe"],
 		});
@@ -119,13 +119,13 @@ function delay(ms: number) {
 }
 
 async function main() {
-	start("bridge", "npx", ["tsx", "bridge/server.ts"], {
+	start("bridge", "bun", ["run", "bridge/server.ts"], {
 		BRIDGE_PORT: String(bridgePort),
 	});
 	start(
 		"vite",
-		"npx",
-		["vite", "--host", host, "--port", String(appPort), "--strictPort"],
+		"bun",
+		["run", "vite", "--host", host, "--port", String(appPort), "--strictPort"],
 		{
 			VITE_BRIDGE_BASE : bridgeUrl,
 			VITE_BRIDGE_WS   : bridgeUrl.replace(/^http/, "ws"),

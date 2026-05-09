@@ -23,7 +23,7 @@ export async function getStatus(): Promise<BridgeStatus> {
 			message:
 				"The Svelte app is running, but the TypeScript bridge at localhost:8787 did not answer.",
 			recovery:
-				"Run npm run show, or run npm run bridge in another terminal before using the browser app.",
+				"Run bun show, or run npm run bridge in another terminal before using the browser app.",
 		});
 	}
 }
