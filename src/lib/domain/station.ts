@@ -1,15 +1,15 @@
 // ── Domain: StationId + NSLC ──
 // Pure value objects. No I/O, no framework dependencies.
 
-import type { ProviderId } from '$lib/domain/provider-id';
+import type { ProviderId } from "$lib/domain/provider-id";
 
 export type StationId = string;
 
 export type NSLC = {
-	network:  string;
-	station:  string;
-	location: string;
-	channel:  string;
+	network  : string;
+	station  : string;
+	location : string;
+	channel  : string;
 };
 
 /**
@@ -24,13 +24,13 @@ export function nslcToChannelHint(nslc: NSLC): string {
  * Returns null if the string doesn't match the expected 4-part format.
  */
 export function parseChannelHint(hint: string): NSLC | null {
-	const parts = hint.split('.');
+	const parts = hint.split(".");
 	if (parts.length !== 4) return null;
 	return {
-		network:  parts[0],
-		station:  parts[1],
-		location: parts[2],
-		channel:  parts[3]
+		network  : parts[0],
+		station  : parts[1],
+		location : parts[2],
+		channel  : parts[3],
 	};
 }
 
@@ -38,11 +38,11 @@ export function parseChannelHint(hint: string): NSLC | null {
  * Known Raspberry Shake stations with their default NSLC.
  */
 export const RASPBERRY_SHAKE_NSLC: Record<string, NSLC> = {
-	RD432: { network: 'AM', station: 'RD432', location: '00', channel: 'EHZ' },
-	R5022: { network: 'AM', station: 'R5022', location: '00', channel: 'EHZ' },
-	RCA97: { network: 'AM', station: 'RCA97', location: '00', channel: 'EHZ' },
-	R83E1: { network: 'AM', station: 'R83E1', location: '00', channel: 'EHZ' },
-	R5156: { network: 'AM', station: 'R5156', location: '00', channel: 'EHZ' }
+	RD432 : { network : "AM", station : "RD432", location : "00", channel : "EHZ" },
+	R5022 : { network : "AM", station : "R5022", location : "00", channel : "EHZ" },
+	RCA97 : { network : "AM", station : "RCA97", location : "00", channel : "EHZ" },
+	R83E1 : { network : "AM", station : "R83E1", location : "00", channel : "EHZ" },
+	R5156 : { network : "AM", station : "R5156", location : "00", channel : "EHZ" },
 };
 
 /**
@@ -50,7 +50,7 @@ export const RASPBERRY_SHAKE_NSLC: Record<string, NSLC> = {
  * Returns null for 'local' (bridge has no fixed NSLC).
  */
 export function nslcForStation(stationId: StationId): NSLC | null {
-	if (stationId === 'local') return null;
+	if (stationId === "local") return null;
 	return RASPBERRY_SHAKE_NSLC[stationId] ?? null;
 }
 

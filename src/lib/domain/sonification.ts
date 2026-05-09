@@ -2,7 +2,11 @@
 // Pure math — no browser/node/framework dependencies.
 // These functions prepare and shape seismic samples into listenable audio.
 
-import type { CompressionSettings, ListeningFocus, SoundMode } from '$lib/domain/types';
+import type {
+	CompressionSettings,
+	ListeningFocus,
+	SoundMode,
+} from "$lib/domain/types";
 
 /**
  * Remove DC offset, normalize to 98th-percentile peak, apply edge fades.
@@ -14,15 +18,18 @@ export function prepareSamples(input: number[], mode: SoundMode): Float32Array {
 
 	let sum = 0;
 	for (let i = 0; i < input.length; i += 1) sum += input[i];
-	const mean         = sum / input.length;
-	const robustPeak   = estimateRobustPeak(input, mean);
-	const gain         = (mode === 'raw' ? 0.7 : 0.9) / robustPeak;
-	const fadeSamples  = Math.min(Math.floor(input.length * 0.03), 48_000);
+	const mean       = sum / input.length;
+	const robustPeak = estimateRobustPeak(input, mean);
+	const gain = (mode === "raw" ? 0.7 : 0.9) / robustPeak;
+	const fadeSamples = Math.min(Math.floor(input.length * 0.03), 48_000);
 
 	for (let i = 0; i < input.length; i += 1) {
-		const fadeIn  = fadeSamples > 0 ? Math.min(1, i / fadeSamples) : 1;
-		const fadeOut = fadeSamples > 0 ? Math.min(1, (input.length - i - 1) / fadeSamples) : 1;
-		output[i]     = Math.max(-1, Math.min(1, (input[i] - mean) * gain)) * Math.min(fadeIn, fadeOut);
+		const fadeIn = fadeSamples > 0 ? Math.min(1, i / fadeSamples) : 1;
+		const fadeOut =
+			fadeSamples > 0 ? Math.min(1, (input.length - i - 1) / fadeSamples) : 1;
+		output[i] =
+			Math.max(-1, Math.min(1, (input[i] - mean) * gain)) *
+			Math.min(fadeIn, fadeOut);
 	}
 
 	return output;
@@ -50,10 +57,25 @@ export function estimateRobustPeak(input: number[], mean: number): number {
  * Transform compression settings based on listening focus.
  * Gentle = pass-through. Event = lighter compression. Texture = heavier. Scientific = minimal.
  */
-export function applyFocus(compression: CompressionSettings, focus: ListeningFocus): CompressionSettings {
-	if (focus === 'event')      return { ...compression, thresholdDb: Math.min(compression.thresholdDb + 4, -4), ratio: Math.max(2, compression.ratio * 0.75) };
-	if (focus === 'texture')    return { ...compression, thresholdDb: compression.thresholdDb - 6, ratio: compression.ratio + 2, makeupDb: compression.makeupDb + 2 };
-	if (focus === 'scientific') return { ...compression, thresholdDb: -6, ratio: 2, makeupDb: 0 };
+export function applyFocus(
+	compression : CompressionSettings,
+	focus       : ListeningFocus,
+): CompressionSettings {
+	if (focus === "event")
+		return {
+			...compression,
+			thresholdDb : Math.min(compression.thresholdDb + 4, -4),
+			ratio       : Math.max(2, compression.ratio * 0.75),
+		};
+	if (focus === "texture")
+		return {
+			...compression,
+			thresholdDb : compression.thresholdDb - 6,
+			ratio       : compression.ratio + 2,
+			makeupDb    : compression.makeupDb + 2,
+		};
+	if (focus === "scientific")
+		return { ...compression, thresholdDb: -6, ratio: 2, makeupDb: 0 };
 	return compression;
 }
 
@@ -68,9 +90,9 @@ const CHUNK_SIZE = 500_000;
  * Returns a Promise that resolves to the prepared Float32Array.
  */
 export async function prepareSamplesChunked(
-	input: number[],
-	mode: SoundMode,
-	onProgress: (pct: number) => void
+	input : number[],
+	mode  : SoundMode,
+	onProgress: (pct: number) => void,
 ): Promise<Float32Array> {
 	if (input.length <= CHUNK_SIZE) {
 		onProgress(1);
@@ -82,13 +104,13 @@ export async function prepareSamplesChunked(
 	for (let i = 0; i < input.length; i += 1) sum += input[i];
 	const mean       = sum / input.length;
 	const robustPeak = estimateRobustPeak(input, mean);
-	const gain       = (mode === 'raw' ? 0.7 : 0.9) / robustPeak;
+	const gain = (mode === "raw" ? 0.7 : 0.9) / robustPeak;
 	const fadeSamples = Math.min(Math.floor(input.length * 0.03), 48_000);
 
 	onProgress(0.05);
 
 	// Phase 2: process in chunks
-	const output = new Float32Array(input.length);
+	const output      = new Float32Array(input.length);
 	const totalChunks = Math.ceil(input.length / CHUNK_SIZE);
 
 	for (let chunk = 0; chunk < totalChunks; chunk += 1) {
@@ -96,9 +118,12 @@ export async function prepareSamplesChunked(
 		const end   = Math.min(start + CHUNK_SIZE, input.length);
 
 		for (let i = start; i < end; i += 1) {
-			const fadeIn  = fadeSamples > 0 ? Math.min(1, i / fadeSamples) : 1;
-			const fadeOut = fadeSamples > 0 ? Math.min(1, (input.length - i - 1) / fadeSamples) : 1;
-			output[i] = Math.max(-1, Math.min(1, (input[i] - mean) * gain)) * Math.min(fadeIn, fadeOut);
+			const fadeIn = fadeSamples > 0 ? Math.min(1, i / fadeSamples) : 1;
+			const fadeOut =
+				fadeSamples > 0 ? Math.min(1, (input.length - i - 1) / fadeSamples) : 1;
+			output[i] =
+				Math.max(-1, Math.min(1, (input[i] - mean) * gain)) *
+				Math.min(fadeIn, fadeOut);
 		}
 
 		const pct = 0.05 + ((chunk + 1) / totalChunks) * 0.95;
@@ -142,8 +167,8 @@ export function makeSaturationCurve(amount: number): Float32Array {
 	const samples = 2048;
 	const curve   = new Float32Array(samples);
 	for (let i = 0; i < samples; i += 1) {
-		const x   = (i * 2) / samples - 1;
-		curve[i]  = Math.tanh(x * amount);
+		const x = (i * 2) / samples - 1;
+		curve[i] = Math.tanh(x * amount);
 	}
 	return curve;
 }

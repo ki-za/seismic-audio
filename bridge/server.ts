@@ -1,57 +1,80 @@
-import dgram from 'node:dgram';
-import http from 'node:http';
-import { WebSocketServer } from 'ws';
-import { parseDatacastPacket } from './datacast';
-import { chooseRenderedSampleRate, resample, RollingRecorder } from './recorder';
-import { loadRaspberryShakeTrace } from './raspberryshake';
-import { startSyntheticFeed } from './synthetic';
+import dgram from "node:dgram";
+import http from "node:http";
+import { WebSocketServer } from "ws";
+import { parseDatacastPacket } from "./datacast";
+import {
+	chooseRenderedSampleRate,
+	resample,
+	RollingRecorder,
+} from "./recorder";
+import { loadRaspberryShakeTrace } from "./raspberryshake";
+import { startSyntheticFeed } from "./synthetic";
 
-const udpPort = Number.parseInt(process.env.UDP_PORT ?? '8888', 10);
-const httpPort = Number.parseInt(process.env.BRIDGE_PORT ?? '8787', 10);
-const mode = (process.env.INPUT_MODE ?? 'synthetic') as 'synthetic' | 'udp';
+const udpPort  = Number.parseInt(process.env.UDP_PORT ?? "8888", 10);
+const httpPort = Number.parseInt(process.env.BRIDGE_PORT ?? "8787", 10);
+const mode     = (process.env.INPUT_MODE ?? "synthetic") as "synthetic" | "udp";
 const recorder = new RollingRecorder({ sourceSampleRate: 100, maxHours: 72 });
 
-if (mode === 'synthetic') {
+if (mode === "synthetic") {
 	startSyntheticFeed(recorder);
-	console.log('synthetic feed started');
+	console.log("synthetic feed started");
 } else {
-	const udp = dgram.createSocket('udp4');
-	udp.on('message', (data) => {
+	const udp = dgram.createSocket("udp4");
+	udp.on("message", (data) => {
 		try {
 			const packet = parseDatacastPacket(data);
 			recorder.ingest(packet.channel, packet.timestampMs, packet.samples);
 		} catch (error) {
-			console.warn('bad DATACAST packet', error);
+			console.warn("bad DATACAST packet", error);
 		}
 	});
-	udp.bind(udpPort, '0.0.0.0', () => console.log(`listening for DATACAST UDP on ${udpPort}`));
+	udp.bind(udpPort, "0.0.0.0", () =>
+		console.log(`listening for DATACAST UDP on ${udpPort}`),
+	);
 }
 
 const server = http.createServer(async (request, response) => {
-	const url = new URL(request.url ?? '/', `http://${request.headers.host}`);
-	response.setHeader('Access-Control-Allow-Origin', '*');
+	const url = new URL(request.url ?? "/", `http://${request.headers.host}`);
+	response.setHeader("Access-Control-Allow-Origin", "*");
 
-	if (url.pathname === '/status') {
+	if (url.pathname === "/status") {
 		return sendJson(response, recorder.status(mode, udpPort));
 	}
 
-	if (url.pathname === '/window') {
-		const windowSeconds = Number.parseFloat(url.searchParams.get('windowSeconds') ?? '3600');
-		const playbackSeconds = Number.parseFloat(url.searchParams.get('playbackSeconds') ?? '60');
-		const channel = url.searchParams.get('channel') ?? undefined;
-		const quality = parseQuality(url.searchParams.get('quality'));
-		return sendJson(response, recorder.makeWindow({ channel, windowSeconds, playbackSeconds, quality }));
+	if (url.pathname === "/window") {
+		const windowSeconds = Number.parseFloat(
+			url.searchParams.get("windowSeconds") ?? "3600",
+		);
+		const playbackSeconds = Number.parseFloat(
+			url.searchParams.get("playbackSeconds") ?? "60",
+		);
+		const channel = url.searchParams.get("channel") ?? undefined;
+		const quality = parseQuality(url.searchParams.get("quality"));
+		return sendJson(
+			response,
+			recorder.makeWindow({ channel, windowSeconds, playbackSeconds, quality }),
+		);
 	}
 
-	if (url.pathname === '/raspberryshake/window') {
+	if (url.pathname === "/raspberryshake/window") {
 		try {
-			const station = url.searchParams.get('station') ?? 'RD432';
-			const windowSeconds = Number.parseFloat(url.searchParams.get('windowSeconds') ?? '3600');
-			const playbackSeconds = Number.parseFloat(url.searchParams.get('playbackSeconds') ?? '60');
-			const quality = parseQuality(url.searchParams.get('quality'));
-			const trace = await loadRaspberryShakeTrace({ station, windowSeconds });
-			const renderedSampleRate = chooseRenderedSampleRate(playbackSeconds, quality);
-			const outputCount = Math.max(1, Math.floor(playbackSeconds * renderedSampleRate));
+			const station       = url.searchParams.get("station") ?? "RD432";
+			const windowSeconds = Number.parseFloat(
+				url.searchParams.get("windowSeconds") ?? "3600",
+			);
+			const playbackSeconds = Number.parseFloat(
+				url.searchParams.get("playbackSeconds") ?? "60",
+			);
+			const quality            = parseQuality(url.searchParams.get("quality"));
+			const trace              = await loadRaspberryShakeTrace({ station, windowSeconds });
+			const renderedSampleRate = chooseRenderedSampleRate(
+				playbackSeconds,
+				quality,
+			);
+			const outputCount = Math.max(
+				1,
+				Math.floor(playbackSeconds * renderedSampleRate),
+			);
 
 			const samples = resample(trace.samples, outputCount);
 			return sendJson(response, {
@@ -61,24 +84,26 @@ const server = http.createServer(async (request, response) => {
 				sourceSampleRate: trace.sampleRate,
 				renderedSampleRate,
 				samples,
-				availableSeconds: trace.samples.length / trace.sampleRate,
-				network: trace.network,
-				station: trace.station,
-				location: trace.location,
-				startISO: trace.startISO,
-				endISO: trace.endISO,
-				source: 'raspberryshake',
-				metadata: trace.metadata,
-				metrics: measureSamples(samples, renderedSampleRate)
+				availableSeconds : trace.samples.length / trace.sampleRate,
+				network          : trace.network,
+				station          : trace.station,
+				location         : trace.location,
+				startISO         : trace.startISO,
+				endISO           : trace.endISO,
+				source           : "raspberryshake",
+				metadata         : trace.metadata,
+				metrics          : measureSamples(samples, renderedSampleRate),
 			});
 		} catch (error) {
 			response.statusCode = 502;
-			return sendJson(response, { error: error instanceof Error ? error.message : String(error) });
+			return sendJson(response, {
+				error: error instanceof Error ? error.message : String(error),
+			});
 		}
 	}
 
 	response.statusCode = 404;
-	response.end('not found');
+	response.end("not found");
 });
 
 const wss = new WebSocketServer({ server });
@@ -89,22 +114,29 @@ setInterval(() => {
 	}
 }, 1000);
 
-server.listen(httpPort, () => console.log(`seismic bridge listening on http://localhost:${httpPort}`));
+server.listen(httpPort, () =>
+	console.log(`seismic bridge listening on http://localhost:${httpPort}`),
+);
 
 function parseQuality(value: string | null) {
-	if (value === 'studio' || value === 'balanced' || value === 'installation-safe') return value;
-	return 'balanced';
+	if (
+		value === "studio" ||
+		value === "balanced" ||
+		value === "installation-safe"
+	)
+		return value;
+	return "balanced";
 }
 
 function sendJson(response: http.ServerResponse, data: unknown) {
-	response.setHeader('Content-Type', 'application/json');
+	response.setHeader("Content-Type", "application/json");
 	response.end(JSON.stringify(data));
 }
 
 function measureSamples(samples: ArrayLike<number>, sampleRate: number) {
-	let sum = 0;
+	let sum     = 0;
 	let squares = 0;
-	let peak = 0;
+	let peak    = 0;
 	for (let i = 0; i < samples.length; i += 1) {
 		const value = samples[i];
 		sum += value;
@@ -114,9 +146,9 @@ function measureSamples(samples: ArrayLike<number>, sampleRate: number) {
 	return {
 		sampleCount: samples.length,
 		sampleRate,
-		durationSeconds: sampleRate ? samples.length / sampleRate : 0,
-		rms: samples.length ? Math.sqrt(squares / samples.length) : 0,
+		durationSeconds : sampleRate ? samples.length / sampleRate             : 0,
+		rms             : samples.length ? Math.sqrt(squares / samples.length) : 0,
 		peak,
-		mean: samples.length ? sum / samples.length : 0
+		mean: samples.length ? sum / samples.length : 0,
 	};
 }

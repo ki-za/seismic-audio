@@ -1,11 +1,11 @@
 // ── Domain: ProviderId ──
 // Pure value object. No I/O, no framework dependencies.
 
-export type ProviderId = 'bridge' | 'raspberryshake';
+export type ProviderId = "bridge" | "raspberryshake";
 
 const PROVIDER_LABELS: Record<ProviderId, string> = {
-	bridge:           'Local Bridge',
-	raspberryshake:   'Raspberry Shake Archive'
+	bridge         : "Local Bridge",
+	raspberryshake : "Raspberry Shake Archive",
 };
 
 export function providerLabel(provider: ProviderId): string {
@@ -13,7 +13,7 @@ export function providerLabel(provider: ProviderId): string {
 }
 
 export function isArchiveProvider(provider: ProviderId): boolean {
-	return provider === 'raspberryshake';
+	return provider === "raspberryshake";
 }
 
 /**
@@ -21,5 +21,5 @@ export function isArchiveProvider(provider: ProviderId): boolean {
  * 'local' maps to the bridge provider; everything else is archive.
  */
 export function providerFromStationId(stationId: string): ProviderId {
-	return stationId === 'local' ? 'bridge' : 'raspberryshake';
+	return stationId === "local" ? "bridge" : "raspberryshake";
 }
