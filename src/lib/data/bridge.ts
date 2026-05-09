@@ -1,7 +1,9 @@
 import { appError, unknownError, type AppError } from '$lib/core/errors';
-import type { AudioWindow, BridgeStatus, RenderQuality } from '$lib/types';
+import type { AudioWindowSource, AudioWindowRequest } from '$lib/ports/audio';
+import type { AudioWindow, BridgeStatus } from '$lib/types';
 
-const bridgeBase = 'http://localhost:8787';
+const bridgeBase = import.meta.env.VITE_BRIDGE_BASE ?? 'http://localhost:8787';
+const bridgeSocket = import.meta.env.VITE_BRIDGE_WS ?? bridgeBase.replace(/^http/, 'ws');
 
 export async function getStatus(): Promise<BridgeStatus> {
 	try {
@@ -18,14 +20,7 @@ export async function getStatus(): Promise<BridgeStatus> {
 	}
 }
 
-export async function getAudioWindow(options: {
-	channel?: string;
-	station?: string;
-	source?: 'bridge' | 'raspberryshake';
-	windowSeconds: number;
-	playbackSeconds: number;
-	quality?: RenderQuality;
-}): Promise<AudioWindow> {
+export async function getAudioWindow(options: AudioWindowRequest): Promise<AudioWindow> {
 	const params = new URLSearchParams({
 		windowSeconds: String(options.windowSeconds),
 		playbackSeconds: String(options.playbackSeconds),
@@ -63,7 +58,7 @@ export async function getAudioWindow(options: {
 }
 
 export function connectStatus(onStatus: (status: BridgeStatus) => void, onState?: (state: string) => void) {
-	const socket = new WebSocket('ws://localhost:8787');
+	const socket = new WebSocket(bridgeSocket);
 	socket.onopen = () => onState?.('connected');
 	socket.onclose = () => onState?.('disconnected');
 	socket.onerror = () => onState?.('error');
@@ -74,3 +69,9 @@ export function connectStatus(onStatus: (status: BridgeStatus) => void, onState?
 export function isAppError(error: unknown): error is AppError {
 	return Boolean(error && typeof error === 'object' && 'code' in error && 'recovery' in error);
 }
+
+export const bridgeAudioWindowSource: AudioWindowSource = {
+	getStatus,
+	getAudioWindow,
+	connectStatus
+};

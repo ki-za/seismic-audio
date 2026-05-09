@@ -1,7 +1,8 @@
 <script lang="ts">
 	import { audioBufferToWavBlob, CompressedSeismicPlayer, renderProcessedSeismicBuffer } from '$lib/audio/sonifier';
-	import { buildAudioSettingsSnapshot, buildRequestKey, buildWindowId, fingerprintAudioSettings, isStale, measureAudioSamples } from '$lib/domain/audio-state';
-	import { connectStatus, getAudioWindow, getStatus, isAppError } from '$lib/data/bridge';
+	import { loadAudioWindow } from '$lib/application/seismic-audio-session';
+	import { buildAudioSettingsSnapshot, buildRequestKey, fingerprintAudioSettings, isStale } from '$lib/domain/audio-state';
+	import { bridgeAudioWindowSource, isAppError } from '$lib/data/bridge';
 	import type { AppError } from '$lib/core/errors';
 	import type { AudioWindow, BridgeStatus, CompressionSettings, ListeningFocus, PlaybackChoice, RenderQuality, SoundMode, StationChoice, WindowChoice } from '$lib/types';
 
@@ -78,21 +79,24 @@
 	const soundState = $derived(!loadedFingerprint ? 'not loaded' : selectedFingerprint !== loadedFingerprint ? 'changed · replay to hear' : activeFingerprint === loadedFingerprint && isPlaying ? 'playing · applied' : 'loaded · ready');
 
 	$effect(() => {
-		getStatus().then((next) => (status = next)).catch(() => (connection = 'offline'));
-		return connectStatus((next) => (status = next), (next) => (connection = next));
+		bridgeAudioWindowSource.getStatus().then((next) => (status = next)).catch(() => (connection = 'offline'));
+		return bridgeAudioWindowSource.connectStatus((next) => (status = next), (next) => (connection = next));
 	});
 
 	async function loadWindow() {
 		error = null;
 		isLoading = true;
 		try {
-			const requestKey = selectedRequestKey;
-			const audioWindow = await getAudioWindow(makeAudioRequest());
-			audioWindow.metrics ??= measureAudioSamples(audioWindow.samples, audioWindow.renderedSampleRate);
-			lastAudioWindow = audioWindow;
-			loadedRequestKey = requestKey;
-			loadedWindowId = buildWindowId(audioWindow, requestKey);
-			loadedFingerprint = selectedFingerprint;
+			const loaded = await loadAudioWindow({
+				source: bridgeAudioWindowSource,
+				requestKey: selectedRequestKey,
+				request: makeAudioRequest(),
+				settings: { soundMode, listeningFocus, compression, renderQuality, playbackSeconds: selectedPlaybackSeconds }
+			});
+			lastAudioWindow = loaded.window;
+			loadedRequestKey = loaded.requestKey;
+			loadedWindowId = loaded.windowId;
+			loadedFingerprint = loaded.settingsFingerprint;
 		} catch (caught) {
 			error = isAppError(caught)
 				? caught
@@ -135,9 +139,12 @@
 		error = null;
 		isExporting = true;
 		try {
-			const audioWindow =
-				lastAudioWindow ??
-				(await getAudioWindow(makeAudioRequest()));
+			const audioWindow = lastAudioWindow ?? (await loadAudioWindow({
+				source: bridgeAudioWindowSource,
+				requestKey: selectedRequestKey,
+				request: makeAudioRequest(),
+				settings: { soundMode, listeningFocus, compression, renderQuality, playbackSeconds: selectedPlaybackSeconds }
+			})).window;
 			lastAudioWindow = audioWindow;
 			const buffer = await renderProcessedSeismicBuffer(audioWindow, soundMode, compression, listeningFocus);
 			downloadBlob(audioBufferToWavBlob(buffer), makeExportName(audioWindow, 'wav'));
@@ -225,7 +232,7 @@
 					compression,
 					loadedWindowId,
 					audioSettingsFingerprint: selectedFingerprint,
-					renderMetrics: window.metrics ?? measureAudioSamples(window.samples, window.renderedSampleRate),
+					renderMetrics: window.metrics ?? null,
 					loadMetadata: window.metadata,
 					processing: ['linear resample to playback duration', 'mean removal', '98th-percentile normalization', 'edge fade', 'high-pass', 'low-pass', 'tanh saturation', 'dynamics compression', 'gain'],
 					exportedAtISO: new Date().toISOString()

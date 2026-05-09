@@ -112,7 +112,10 @@ function delay(ms: number) {
 
 async function main() {
 	start('bridge', 'npx', ['tsx', 'bridge/server.ts'], { BRIDGE_PORT: String(bridgePort) });
-	start('vite', 'npx', ['vite', '--host', host, '--port', String(appPort), '--strictPort']);
+	start('vite', 'npx', ['vite', '--host', host, '--port', String(appPort), '--strictPort'], {
+		VITE_BRIDGE_BASE: bridgeUrl,
+		VITE_BRIDGE_WS: bridgeUrl.replace(/^http/, 'ws')
+	});
 
 	await waitFor(`${bridgeUrl}/status`);
 	await waitFor(appUrl);
