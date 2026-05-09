@@ -26,3 +26,7 @@ export function unknownError(error: unknown, fallback: Omit<AppError, 'details'>
 		details: error instanceof Error ? error.message : String(error)
 	};
 }
+
+export function isAppError(error: unknown): error is AppError {
+	return Boolean(error && typeof error === 'object' && 'code' in error && 'recovery' in error);
+}

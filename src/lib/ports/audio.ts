@@ -27,6 +27,10 @@ export type DownloadableFile = {
 	contentType: string;
 };
 
+export type ErrorGuard = {
+	isAppError(error: unknown): boolean;
+};
+
 export type AudioRenderer = {
 	renderWavFile(window: AudioWindow, mode: SoundMode, compression: CompressionSettings, focus: ListeningFocus, filename: string): Promise<DownloadableFile>;
 };

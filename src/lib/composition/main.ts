@@ -1,0 +1,56 @@
+import { createBrowserAudioPlayer, browserAudioRenderer, browserFileDownloader } from '$lib/adapters/browser-audio';
+import { loadAudioWindow, playAudioWindow, exportAudioWindow } from '$lib/application/seismic-audio-session';
+import { isAppError } from '$lib/core/errors';
+import { bridgeAudioWindowSource } from '$lib/data/bridge';
+import type { AudioPlayer, AudioRenderer, AudioWindowSource, FileDownloader } from '$lib/ports/audio';
+import type { AudioWindow, CompressionSettings, ListeningFocus, RenderQuality, SoundMode } from '$lib/types';
+
+// ── wired adapters (singleton scope) ──
+
+const audioWindowSource: AudioWindowSource = bridgeAudioWindowSource;
+const audioPlayer: AudioPlayer = createBrowserAudioPlayer();
+const audioRenderer: AudioRenderer = browserAudioRenderer;
+const fileDownloader: FileDownloader = browserFileDownloader;
+
+audioPlayer.setLevelCallback(() => {});
+// caller patches setLevelCallback() on the returned player after obtaining it
+
+// ── use cases ──
+
+export { isAppError };
+export const getAudioPlayer = () => audioPlayer;
+export const getBridgeStatus = () => audioWindowSource.getStatus();
+export const connectBridgeStatus = (
+	onStatus: Parameters<AudioWindowSource['connectStatus']>[0],
+	onState?: Parameters<AudioWindowSource['connectStatus']>[1]
+) => audioWindowSource.connectStatus(onStatus, onState);
+
+export async function loadWindow(requestKey: string, request: Parameters<AudioWindowSource['getAudioWindow']>[0], settings: {
+	soundMode: SoundMode;
+	listeningFocus: ListeningFocus;
+	compression: CompressionSettings;
+	renderQuality: RenderQuality;
+	playbackSeconds: number;
+}) {
+	return loadAudioWindow({ source: audioWindowSource, requestKey, request, settings });
+}
+
+export async function play(window: AudioWindow, soundMode: SoundMode, compression: CompressionSettings, listeningFocus: ListeningFocus) {
+	return playAudioWindow({ player: audioPlayer, window, soundMode, compression, listeningFocus });
+}
+
+export async function exportWav(opts: {
+	window: AudioWindow;
+	soundMode: SoundMode;
+	compression: CompressionSettings;
+	listeningFocus: ListeningFocus;
+	wavFilename: string;
+	metadataFilename: string;
+	metadata: unknown;
+}) {
+	return exportAudioWindow({
+		renderer: audioRenderer,
+		downloader: fileDownloader,
+		...opts
+	});
+}

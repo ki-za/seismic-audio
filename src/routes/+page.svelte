@@ -1,8 +1,6 @@
 <script lang="ts">
-	import { browserAudioRenderer, browserFileDownloader, createBrowserAudioPlayer } from '$lib/adapters/browser-audio';
-	import { exportAudioWindow, loadAudioWindow, playAudioWindow } from '$lib/application/seismic-audio-session';
 	import { buildAudioSettingsSnapshot, buildRequestKey, fingerprintAudioSettings, isStale } from '$lib/domain/audio-state';
-	import { bridgeAudioWindowSource, isAppError } from '$lib/data/bridge';
+	import { isAppError, getAudioPlayer, getBridgeStatus, connectBridgeStatus, loadWindow, play, exportWav } from '$lib/composition/main';
 	import type { AppError } from '$lib/core/errors';
 	import type { AudioWindow, BridgeStatus, CompressionSettings, ListeningFocus, PlaybackChoice, RenderQuality, SoundMode, StationChoice, WindowChoice } from '$lib/types';
 
@@ -62,7 +60,7 @@
 	let activeFingerprint = $state<string | null>(null);
 	let isExporting = $state(false);
 
-	const player = createBrowserAudioPlayer();
+	const player = getAudioPlayer();
 	player.setLevelCallback((level) => (audioLevel = level));
 
 	const selectedWindow = $derived(windows.find((choice) => choice.seconds === selectedWindowSeconds) ?? windows[0]);
@@ -79,19 +77,16 @@
 	const soundState = $derived(!loadedFingerprint ? 'not loaded' : selectedFingerprint !== loadedFingerprint ? 'changed · replay to hear' : activeFingerprint === loadedFingerprint && isPlaying ? 'playing · applied' : 'loaded · ready');
 
 	$effect(() => {
-		bridgeAudioWindowSource.getStatus().then((next) => (status = next)).catch(() => (connection = 'offline'));
-		return bridgeAudioWindowSource.connectStatus((next) => (status = next), (next) => (connection = next));
+		getBridgeStatus().then((next) => (status = next)).catch(() => (connection = 'offline'));
+		return connectBridgeStatus((next) => (status = next), (next) => (connection = next));
 	});
 
-	async function loadWindow() {
+	async function loadWindowAction() {
 		error = null;
 		isLoading = true;
 		try {
-			const loaded = await loadAudioWindow({
-				source: bridgeAudioWindowSource,
-				requestKey: selectedRequestKey,
-				request: makeAudioRequest(),
-				settings: { soundMode, listeningFocus, compression, renderQuality, playbackSeconds: selectedPlaybackSeconds }
+			const loaded = await loadWindow(selectedRequestKey, makeAudioRequest(), {
+				soundMode, listeningFocus, compression, renderQuality, playbackSeconds: selectedPlaybackSeconds
 			});
 			lastAudioWindow = loaded.window;
 			loadedRequestKey = loaded.requestKey;
@@ -114,11 +109,11 @@
 
 	async function playLoaded() {
 		error = null;
-		if (!lastAudioWindow || loadedState === 'stale') await loadWindow();
+		if (!lastAudioWindow || loadedState === 'stale') await loadWindowAction();
 		if (!lastAudioWindow) return;
 		isPlaying = true;
 		try {
-			await playAudioWindow({ player, window: lastAudioWindow, soundMode, compression, listeningFocus });
+			await play(lastAudioWindow, soundMode, compression, listeningFocus);
 			loadedFingerprint = selectedFingerprint;
 			activeFingerprint = selectedFingerprint;
 		} catch (caught) {
@@ -139,16 +134,11 @@
 		error = null;
 		isExporting = true;
 		try {
-			const audioWindow = lastAudioWindow ?? (await loadAudioWindow({
-				source: bridgeAudioWindowSource,
-				requestKey: selectedRequestKey,
-				request: makeAudioRequest(),
-				settings: { soundMode, listeningFocus, compression, renderQuality, playbackSeconds: selectedPlaybackSeconds }
+			const audioWindow = lastAudioWindow ?? (await loadWindow(selectedRequestKey, makeAudioRequest(), {
+				soundMode, listeningFocus, compression, renderQuality, playbackSeconds: selectedPlaybackSeconds
 			})).window;
 			lastAudioWindow = audioWindow;
-			await exportAudioWindow({
-				renderer: browserAudioRenderer,
-				downloader: browserFileDownloader,
+			await exportWav({
 				window: audioWindow,
 				soundMode,
 				compression,
@@ -351,7 +341,7 @@
 		</div>
 
 		<div class="actions">
-			<button data-testid="load-window" onclick={loadWindow} disabled={isLoading}>{isLoading ? 'Loading…' : 'Load Window'}</button>
+			<button data-testid="load-window" onclick={loadWindowAction} disabled={isLoading}>{isLoading ? 'Loading…' : 'Load Window'}</button>
 			<button class="primary" data-testid="begin-listening" onclick={playLoaded}>{isPlaying ? 'Restart Loaded Loop' : 'Play Loaded Loop'}</button>
 			<button onclick={stop}>Stop</button>
 			<button onclick={downloadWav} disabled={isExporting || !lastAudioWindow}>{isExporting ? 'Rendering WAV…' : 'Download WAV + metadata'}</button>
