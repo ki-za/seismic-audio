@@ -162,20 +162,34 @@ function prepareSamples(input: number[], mode: SoundMode): Float32Array {
 	const output = new Float32Array(input.length);
 	if (input.length === 0) return output;
 
-	const mean = input.reduce((sum, value) => sum + value, 0) / input.length;
-	const centered = input.map((value) => value - mean);
-	const sorted = [...centered].map(Math.abs).sort((a, b) => a - b);
-	const robustPeak = sorted[Math.floor(sorted.length * 0.98)] || 1;
+	let sum = 0;
+	for (let i = 0; i < input.length; i += 1) sum += input[i];
+	const mean = sum / input.length;
+	const robustPeak = estimateRobustPeak(input, mean);
 	const gain = (mode === 'raw' ? 0.7 : 0.9) / robustPeak;
 	const fadeSamples = Math.min(Math.floor(input.length * 0.03), 48_000);
 
-	for (let i = 0; i < centered.length; i += 1) {
+	for (let i = 0; i < input.length; i += 1) {
 		const fadeIn = fadeSamples > 0 ? Math.min(1, i / fadeSamples) : 1;
-		const fadeOut = fadeSamples > 0 ? Math.min(1, (centered.length - i - 1) / fadeSamples) : 1;
-		output[i] = Math.max(-1, Math.min(1, centered[i] * gain)) * Math.min(fadeIn, fadeOut);
+		const fadeOut = fadeSamples > 0 ? Math.min(1, (input.length - i - 1) / fadeSamples) : 1;
+		output[i] = Math.max(-1, Math.min(1, (input[i] - mean) * gain)) * Math.min(fadeIn, fadeOut);
 	}
 
 	return output;
+}
+
+function estimateRobustPeak(input: number[], mean: number): number {
+	const maxSamples = 100_000;
+	const stride = Math.max(1, Math.floor(input.length / maxSamples));
+	const values = new Array<number>(Math.ceil(input.length / stride));
+	let count = 0;
+	for (let i = 0; i < input.length; i += stride) {
+		values[count] = Math.abs(input[i] - mean);
+		count += 1;
+	}
+	values.length = count;
+	values.sort((a, b) => a - b);
+	return values[Math.floor(values.length * 0.98)] || 1;
 }
 
 function configureChain(

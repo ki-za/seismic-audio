@@ -20,6 +20,8 @@ export async function getStatus(): Promise<BridgeStatus> {
 
 export async function getAudioWindow(options: {
 	channel?: string;
+	station?: string;
+	source?: 'bridge' | 'raspberryshake';
 	windowSeconds: number;
 	playbackSeconds: number;
 	quality?: RenderQuality;
@@ -30,10 +32,15 @@ export async function getAudioWindow(options: {
 		quality: options.quality ?? 'balanced'
 	});
 	if (options.channel) params.set('channel', options.channel);
+	if (options.station) params.set('station', options.station);
 
 	try {
-		const response = await fetch(`${bridgeBase}/window?${params}`);
-		if (!response.ok) throw new Error(`HTTP ${response.status}`);
+		const path = options.source === 'raspberryshake' ? '/raspberryshake/window' : '/window';
+		const response = await fetch(`${bridgeBase}${path}?${params}`);
+		if (!response.ok) {
+			const body = await response.json().catch(() => null);
+			throw new Error(body?.error ?? `HTTP ${response.status}`);
+		}
 		const window = (await response.json()) as AudioWindow;
 		if (window.samples.length === 0) {
 			throw appError({
