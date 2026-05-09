@@ -1,7 +1,8 @@
 import { createBrowserAudioPlayer, browserAudioRenderer, browserFileDownloader } from '$lib/adapters/browser-audio';
-import { loadAudioWindow, makeExportName, makeExportMetadata, playAudioWindow, exportAudioWindow, selectProvider, compareAudioSettings, advanceLoadState, getStationNSLC } from '$lib/application/seismic-audio-session';
+import { loadAudioWindow, makeExportName, makeExportMetadata, playAudioWindow, playPreparedAudioWindow, exportAudioWindow, selectProvider, compareAudioSettings, advanceLoadState, getStationNSLC } from '$lib/application/seismic-audio-session';
 import { isAppError } from '$lib/core/errors';
 import { buildAudioSettingsSnapshot, buildRequestKey, fingerprintAudioSettings, isStale } from '$lib/domain/audio-state';
+import { prepareSamplesChunked } from '$lib/domain/sonification';
 import { bridgeAudioWindowSource } from '$lib/adapters/bridge-client';
 import type { AudioPlayer, AudioRenderer, AudioWindowSource, FileDownloader } from '$lib/ports/audio';
 import type { AudioWindow, CompressionSettings, ListeningFocus, RenderQuality, SoundMode } from '$lib/types';
@@ -21,7 +22,7 @@ audioPlayer.setLevelCallback(() => {});
 
 // ── use cases ──
 
-export { isAppError, buildAudioSettingsSnapshot, buildRequestKey, fingerprintAudioSettings, isStale, makeExportName, makeExportMetadata, selectProvider, compareAudioSettings, advanceLoadState, getStationNSLC };
+export { isAppError, buildAudioSettingsSnapshot, buildRequestKey, fingerprintAudioSettings, isStale, makeExportName, makeExportMetadata, selectProvider, compareAudioSettings, advanceLoadState, getStationNSLC, prepareSamplesChunked };
 export type { ExportNameInput, ExportMetadataInput, ProviderInfo, SettingsComparison } from '$lib/application/seismic-audio-session';
 export const getAudioPlayer = () => audioPlayer;
 export const getBridgeStatus = () => audioWindowSource.getStatus();
@@ -42,6 +43,11 @@ export async function loadWindow(requestKey: string, request: Parameters<AudioWi
 
 export async function play(window: AudioWindow, soundMode: SoundMode, compression: CompressionSettings, listeningFocus: ListeningFocus) {
 	return playAudioWindow({ player: audioPlayer, window, soundMode, compression, listeningFocus });
+}
+
+/** Play with pre-prepared samples (caller ran prepareSamplesChunked first). */
+export async function playPrepared(samples: Float32Array, renderedSampleRate: number, soundMode: SoundMode, compression: CompressionSettings, listeningFocus: ListeningFocus): Promise<void> {
+	await playPreparedAudioWindow({ player: audioPlayer, samples, renderedSampleRate, soundMode, compression, listeningFocus });
 }
 
 export async function exportWav(opts: {

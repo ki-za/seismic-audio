@@ -5,7 +5,7 @@ export class CompressedSeismicPlayer {
 	private context: AudioContext | null = null;
 	private active: AudioBufferSourceNode | null = null;
 	private meterTimer: number | null = null;
-	private onLevel: (level: number) => void = () => {};
+	onLevel: (level: number) => void = () => {};
 
 	setLevelCallback(callback: (level: number) => void) {
 		this.onLevel = callback;
@@ -22,14 +22,16 @@ export class CompressedSeismicPlayer {
 		this.stopMeter();
 	}
 
-	async play(window: AudioWindow, mode: SoundMode, compression: CompressionSettings = defaultCompression, focus: ListeningFocus = 'gentle') {
+	/**
+	 * Play with pre-prepared Float32Array samples (caller already ran DSP).
+	 * This is the fast path — no synchronous prepareSamples here.
+	 */
+	async playPrepared(samples: Float32Array, renderedSampleRate: number, mode: SoundMode, compression: CompressionSettings, focus: ListeningFocus) {
 		await this.start();
-		const context = this.context;
-		if (!context) return;
+		const context = this.context!;
 
 		this.stop();
-		const samples = prepareSamples(window.samples, mode);
-		const buffer = context.createBuffer(1, samples.length, window.renderedSampleRate);
+		const buffer = context.createBuffer(1, samples.length, renderedSampleRate);
 		buffer.getChannelData(0).set(samples);
 
 		const source   = context.createBufferSource();
@@ -56,6 +58,12 @@ export class CompressedSeismicPlayer {
 				this.stopMeter();
 			}
 		};
+	}
+
+	/** Legacy path — does prepareSamples internally. Kept for backward compat. */
+	async play(window: AudioWindow, mode: SoundMode, compression: CompressionSettings = defaultCompression, focus: ListeningFocus = 'gentle') {
+		await this.start();
+		this.playPrepared(prepareSamples(window.samples, mode), window.renderedSampleRate, mode, compression, focus);
 	}
 
 	private startMeter(analyser: AnalyserNode) {

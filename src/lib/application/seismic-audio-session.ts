@@ -52,6 +52,22 @@ export async function playAudioWindow(command: {
 	await command.player.play(command.window, command.soundMode, command.compression, command.listeningFocus);
 }
 
+/**
+ * Play with pre-prepared samples.
+ * Caller runs prepareSamplesChunked first, then passes the result here.
+ * This avoids synchronous blocking inside the player.
+ */
+export async function playPreparedAudioWindow(command: {
+	player: AudioPlayer;
+	samples: Float32Array;
+	renderedSampleRate: number;
+	soundMode: SoundMode;
+	compression: CompressionSettings;
+	listeningFocus: ListeningFocus;
+}): Promise<void> {
+	await command.player.playPrepared(command.samples, command.renderedSampleRate, command.soundMode, command.compression, command.listeningFocus);
+}
+
 export type ExportNameInput = {
 	stationId: string;
 	channel: string;

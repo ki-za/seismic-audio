@@ -1,5 +1,5 @@
 <script lang="ts">
-	import { isAppError, buildAudioSettingsSnapshot, buildRequestKey, fingerprintAudioSettings, getAudioPlayer, getBridgeStatus, connectBridgeStatus, loadWindow, play, exportWav, makeExportName, makeExportMetadata, selectProvider, compareAudioSettings, advanceLoadState } from '$lib/composition/main';
+	import { isAppError, buildAudioSettingsSnapshot, buildRequestKey, fingerprintAudioSettings, getAudioPlayer, getBridgeStatus, connectBridgeStatus, loadWindow, playPrepared, prepareSamplesChunked, exportWav, makeExportName, makeExportMetadata, selectProvider, compareAudioSettings, advanceLoadState } from '$lib/composition/main';
 	import { initialLoadState, loadStateLabel } from '$lib/domain/load-state';
 	import type { AppError } from '$lib/core/errors';
 	import type { LoadStateSnapshot } from '$lib/domain/load-state';
@@ -51,6 +51,9 @@
 	let listeningFocus = $state<ListeningFocus>('gentle');
 	let compression = $state<CompressionSettings>({ thresholdDb: -18, ratio: 4, attackMs: 5, releaseMs: 90, makeupDb: 3 });
 	let isPlaying = $state(false);
+	type PlayPhase = 'idle' | 'loading' | 'rendering' | 'starting' | 'playing';
+	let playPhase = $state<PlayPhase>('idle');
+	let dspProgress = $state(0);
 	let isLoading = $state(false);
 	let showMode = $state(false);
 	let error = $state<AppError | null>(null);
@@ -132,14 +135,32 @@
 
 	async function playLoaded() {
 		error = null;
-		if (!lastAudioWindow || loadState.state === 'stale') await loadWindowAction();
-		if (!lastAudioWindow) return;
-		isPlaying = true;
+		// Phase 0: load window if stale or not yet loaded
+		if (!lastAudioWindow || loadState.state === 'stale') {
+			playPhase = 'loading';
+			await loadWindowAction();
+		}
+		if (!lastAudioWindow) {
+			playPhase = 'idle';
+			return;
+		}
 		try {
-			await play(lastAudioWindow, soundMode, compression, listeningFocus);
+			// Phase 1: prepare samples in chunks with progress feedback
+			playPhase = 'rendering';
+			const samples = await prepareSamplesChunked(lastAudioWindow.samples, soundMode, (pct) => {
+				dspProgress = Math.round(pct * 100);
+			});
+			// Phase 2: start Web Audio (creates/resumes AudioContext, wires nodes)
+			playPhase = 'starting';
+			await playPrepared(samples, lastAudioWindow.renderedSampleRate, soundMode, compression, listeningFocus);
+			// Phase 3: playing
+			playPhase = 'playing';
+			isPlaying = true;
 			loadedFingerprint = selectedFingerprint;
 			activeFingerprint = selectedFingerprint;
+			dspProgress = 0;
 		} catch (caught) {
+			playPhase = 'idle';
 			isPlaying = false;
 			error = isAppError(caught)
 				? caught
@@ -219,6 +240,7 @@
 	function stop() {
 		player.stop();
 		isPlaying = false;
+		playPhase = 'idle';
 		activeFingerprint = null;
 	}
 
@@ -375,7 +397,9 @@
 
 		<div class="actions">
 			<button data-testid="load-window" onclick={loadWindowAction} disabled={isLoading}>{isLoading ? 'Loading…' : 'Load Window'}</button>
-			<button class="primary" data-testid="begin-listening" onclick={playLoaded}>{isPlaying ? 'Restart Loaded Loop' : 'Play Loaded Loop'}</button>
+			<button class="primary" data-testid="begin-listening" onclick={playLoaded} disabled={playPhase === 'loading' || playPhase === 'rendering' || playPhase === 'starting'}>
+				{playPhase === 'loading' ? 'Loading window…' : playPhase === 'rendering' ? `Processing samples… ${dspProgress}%` : playPhase === 'starting' ? 'Starting audio…' : isPlaying ? 'Restart Loaded Loop' : 'Play Loaded Loop'}
+			</button>
 			<button onclick={stop}>Stop</button>
 			<button onclick={downloadWav} disabled={isExporting || !lastAudioWindow}>{isExporting ? 'Rendering WAV…' : 'Download WAV + metadata'}</button>
 			<button onclick={showMode ? exitShowMode : enterShowMode}>{showMode ? 'Exit show mode' : 'Fullscreen show mode'}</button>

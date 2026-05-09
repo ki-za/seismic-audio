@@ -18,6 +18,7 @@ export type AudioWindowSource = {
 export type AudioPlayer = {
 	setLevelCallback(callback: (level: number) => void): void;
 	play(window: AudioWindow, mode: SoundMode, compression: CompressionSettings, focus: ListeningFocus): Promise<void>;
+	playPrepared(samples: Float32Array, renderedSampleRate: number, mode: SoundMode, compression: CompressionSettings, focus: ListeningFocus): Promise<void>;
 	stop(): void;
 };
 

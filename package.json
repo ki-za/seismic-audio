@@ -11,7 +11,9 @@
     "bridge": "tsx bridge/server.ts",
     "show": "npm-run-all --parallel bridge dev",
     "smoke:browser": "tsx scripts/browser-smoke.ts",
-    "diagnose": "tsx scripts/run-diagnostics.ts"
+    "diagnose": "tsx scripts/run-diagnostics.ts",
+    "diagnose:dsp": "tsx scripts/dsp-chunked-diag.ts",
+    "diagnose:domain": "tsx scripts/domain-diag.ts"
   },
   "devDependencies": {
     "@sveltejs/adapter-static": "latest",
