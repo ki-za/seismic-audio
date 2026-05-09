@@ -1,6 +1,6 @@
 <script lang="ts">
-	import { audioBufferToWavBlob, CompressedSeismicPlayer, renderProcessedSeismicBuffer } from '$lib/audio/sonifier';
-	import { loadAudioWindow } from '$lib/application/seismic-audio-session';
+	import { browserAudioRenderer, browserFileDownloader, createBrowserAudioPlayer } from '$lib/adapters/browser-audio';
+	import { exportAudioWindow, loadAudioWindow, playAudioWindow } from '$lib/application/seismic-audio-session';
 	import { buildAudioSettingsSnapshot, buildRequestKey, fingerprintAudioSettings, isStale } from '$lib/domain/audio-state';
 	import { bridgeAudioWindowSource, isAppError } from '$lib/data/bridge';
 	import type { AppError } from '$lib/core/errors';
@@ -62,7 +62,7 @@
 	let activeFingerprint = $state<string | null>(null);
 	let isExporting = $state(false);
 
-	const player = new CompressedSeismicPlayer();
+	const player = createBrowserAudioPlayer();
 	player.setLevelCallback((level) => (audioLevel = level));
 
 	const selectedWindow = $derived(windows.find((choice) => choice.seconds === selectedWindowSeconds) ?? windows[0]);
@@ -118,7 +118,7 @@
 		if (!lastAudioWindow) return;
 		isPlaying = true;
 		try {
-			await player.play(lastAudioWindow, soundMode, compression, listeningFocus);
+			await playAudioWindow({ player, window: lastAudioWindow, soundMode, compression, listeningFocus });
 			loadedFingerprint = selectedFingerprint;
 			activeFingerprint = selectedFingerprint;
 		} catch (caught) {
@@ -146,9 +146,17 @@
 				settings: { soundMode, listeningFocus, compression, renderQuality, playbackSeconds: selectedPlaybackSeconds }
 			})).window;
 			lastAudioWindow = audioWindow;
-			const buffer = await renderProcessedSeismicBuffer(audioWindow, soundMode, compression, listeningFocus);
-			downloadBlob(audioBufferToWavBlob(buffer), makeExportName(audioWindow, 'wav'));
-			downloadBlob(makeMetadataBlob(audioWindow), makeExportName(audioWindow, 'json'));
+			await exportAudioWindow({
+				renderer: browserAudioRenderer,
+				downloader: browserFileDownloader,
+				window: audioWindow,
+				soundMode,
+				compression,
+				listeningFocus,
+				wavFilename: makeExportName(audioWindow, 'wav'),
+				metadataFilename: makeExportName(audioWindow, 'json'),
+				metadataBlob: makeMetadataBlob(audioWindow)
+			});
 		} catch (caught) {
 			error = {
 				code: 'AUDIO_EXPORT_FAILED',
@@ -193,15 +201,6 @@
 		if (seconds < 90) return `${Math.floor(seconds)} sec`;
 		if (seconds < 5400) return `${Math.floor(seconds / 60)} min`;
 		return `${(seconds / 3600).toFixed(1)} hr`;
-	}
-
-	function downloadBlob(blob: Blob, filename: string) {
-		const url = URL.createObjectURL(blob);
-		const anchor = document.createElement('a');
-		anchor.href = url;
-		anchor.download = filename;
-		anchor.click();
-		URL.revokeObjectURL(url);
 	}
 
 	function makeExportName(window: AudioWindow, extension: 'wav' | 'json') {

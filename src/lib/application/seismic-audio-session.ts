@@ -1,5 +1,5 @@
 import { buildAudioSettingsSnapshot, buildWindowId, fingerprintAudioSettings, measureAudioSamples } from '$lib/domain/audio-state';
-import type { AudioWindowSource } from '$lib/ports/audio';
+import type { AudioPlayer, AudioRenderer, AudioWindowSource, FileDownloader } from '$lib/ports/audio';
 import type { AudioSettingsSnapshot, AudioWindow, CompressionSettings, ListeningFocus, RenderQuality, SoundMode } from '$lib/types';
 
 export type LoadAudioWindowCommand = {
@@ -37,4 +37,30 @@ export async function loadAudioWindow(command: LoadAudioWindowCommand): Promise<
 		settingsSnapshot,
 		settingsFingerprint: fingerprintAudioSettings(settingsSnapshot)
 	};
+}
+
+export async function playAudioWindow(command: {
+	player: AudioPlayer;
+	window: AudioWindow;
+	soundMode: SoundMode;
+	compression: CompressionSettings;
+	listeningFocus: ListeningFocus;
+}): Promise<void> {
+	await command.player.play(command.window, command.soundMode, command.compression, command.listeningFocus);
+}
+
+export async function exportAudioWindow(command: {
+	renderer: AudioRenderer;
+	downloader: FileDownloader;
+	window: AudioWindow;
+	soundMode: SoundMode;
+	compression: CompressionSettings;
+	listeningFocus: ListeningFocus;
+	wavFilename: string;
+	metadataFilename: string;
+	metadataBlob: Blob;
+}): Promise<void> {
+	const buffer = await command.renderer.renderProcessedSeismicBuffer(command.window, command.soundMode, command.compression, command.listeningFocus);
+	command.downloader.downloadBlob(command.renderer.audioBufferToWavBlob(buffer), command.wavFilename);
+	command.downloader.downloadBlob(command.metadataBlob, command.metadataFilename);
 }
