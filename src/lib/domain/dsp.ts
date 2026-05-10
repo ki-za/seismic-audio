@@ -202,6 +202,53 @@ export function biquadPeak(cutoffHz: number, gainDb: number, Q: number, sampleRa
 }
 
 /**
+ * Subtract buffer B from buffer A element-wise. A and B must be same length.
+ * Returns a new Float32Array.
+ */
+export function subtractBuffers(a: Float32Array, b: Float32Array): Float32Array {
+	const n = Math.min(a.length, b.length);
+	const out = new Float32Array(n);
+	for (let i = 0; i < n; i++) out[i] = a[i] - b[i];
+	return out;
+}
+
+/**
+ * Band-pass filter (2-pole, constant-skirt).
+ * Based on RBJ cookbook: BPF with 0 dB peak gain (peak gain = Q).
+ */
+export function biquadBPF(cutoffHz: number, Q: number, sampleRate: number): BiquadCoefficients {
+	const w0 = 2 * Math.PI * cutoffHz / sampleRate;
+	const alpha = Math.sin(w0) / (2 * Q);
+	const cosw0 = Math.cos(w0);
+
+	const b0 = alpha;
+	const b1 = 0;
+	const b2 = -alpha;
+	const a0 = 1 + alpha;
+	const a1 = -2 * cosw0;
+	const a2 = 1 - alpha;
+
+	return normalise({ b0, b1, b2, a0, a1, a2 });
+}
+
+/**
+ * Linkwitz-Riley 4th-order crossover low-pass section.
+ * Cascaded two identical 2-pole LPF stages at the same cutoff (Q = 0.707)
+ * to produce -24 dB/octave slope with phase-coherent sum.
+ */
+export function linkwitzRileyLowpass(
+	input     : Float32Array,
+	sampleRate: number,
+	cutoffHz  : number,
+): Float32Array {
+	const coeffs = biquadLPF(cutoffHz, sampleRate, 0.707);
+	// First stage
+	const stage1 = biquadApply(input, coeffs);
+	// Second stage (same coeffs, cascaded)
+	return biquadApply(stage1, coeffs);
+}
+
+/**
  * High-shelf filter.
  * slope: 0.5 (gentle) to 1.0 (steep). Standard value is 0.5 (shelf slope = 1/sqrt(2)).
  */

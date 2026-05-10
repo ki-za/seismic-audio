@@ -46,17 +46,25 @@ export function softClip(sample: number, drive: number, knee: number): number {
 export function lookAheadLimiter(
 	input      : Float32Array,
 	sampleRate : number,
-	options    : LimiterParams,
+	options?   : Partial<LimiterParams>,
 ): Float32Array {
 	const n                = input.length;
 	if (n === 0) return new Float32Array(0);
 
+	const opts: LimiterParams = {
+		ceilingDb     : options?.ceilingDb     ?? 0,
+		lookAheadMs   : options?.lookAheadMs   ?? 5,
+		releaseMs     : options?.releaseMs     ?? 200,
+		softClipKnee  : options?.softClipKnee  ?? 0.92,
+		softClipDrive : options?.softClipDrive ?? 1.0,
+	};
+
 	const output            = new Float32Array(n);
-	const ceiling           = dbToLinear(options.ceilingDb);
-	const lookAheadSamples  = Math.max(1, Math.round((options.lookAheadMs / 1000) * sampleRate));
-	const releaseCoeff      = smoothingCoefficient(options.releaseMs, sampleRate);
-	const knee              = clamp(options.softClipKnee, 0.1, 0.99);
-	const drive             = Math.max(1, options.softClipDrive);
+	const ceiling           = dbToLinear(opts.ceilingDb);
+	const lookAheadSamples  = Math.max(1, Math.round((opts.lookAheadMs / 1000) * sampleRate));
+	const releaseCoeff      = smoothingCoefficient(opts.releaseMs, sampleRate);
+	const knee              = clamp(opts.softClipKnee, 0.1, 0.99);
+	const drive             = Math.max(1, opts.softClipDrive);
 
 	let currentGain = 1;
 

@@ -30,13 +30,14 @@
 - export path: renderWavFile first applies P0 domain chain, then optional Web Audio tone shaping
 - 155 diagnostics passing across Batch A–E
 
-## ☐ Tier 5 — P1 algorithms (gallery-quality)
-- Asymmetric saturation (domain/saturation.ts)
+## ✅ Tier 5 — P1 algorithms (gallery-quality)
+- Asymmetric saturation (domain/saturation.ts) — wired into sonifier.ts configureChain
 - Relative de-esser (domain/deesser.ts)
 - Three-band compressor (domain/multiband.ts)
 - Dynamic EQ (domain/dynamic-eq.ts)
 - Expander + comfort noise (domain/expander.ts)
 - Mono-safe pseudo-stereo (domain/stereo.ts)
+- xorshift32 PRNG extracted into domain/prng.ts (shared by dither + expander)
 
 ## ☐ Tier 5 — Diagnostics upgrade
 - Upgrade browser-smoke.ts: change one audio setting → verify fingerprint changed and audioDetected

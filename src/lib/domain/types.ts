@@ -67,3 +67,63 @@ export type LufsParams = {
 	hopMs             : number; // 100 ms
 	absoluteGate      : number; // -70 LUFS
 };
+
+// ── P1 DSP Algorithm Types ──
+
+export type SaturationParams = {
+	drive        : number; // 1.1–3.0
+	knee         : number; // 0.6–0.95
+	asymmetry    : number; // 0.0–0.2
+	wetDryMix    : number; // 0.05–0.4
+	outputTrimDb : number; // -3 to 0 dB
+};
+
+export type DeEsserParams = {
+	detectorFrequencyHz : number;  // 2000–8000 Hz
+	relativeThresholdDb : number;  // -20 to 0 dB
+	maxReductionDb      : number;  // 3–12 dB
+	attackMs            : number;  // 0.5–5 ms
+	releaseMs           : number;  // 30–200 ms
+};
+
+export type BandCompressorParams = {
+	thresholdDb : number;
+	ratio       : number;
+	attackMs    : number;
+	releaseMs   : number;
+	makeupDb    : number;
+};
+
+export type MultibandParams = {
+	lowCrossoverHz  : number;                      // 150–350 Hz
+	highCrossoverHz : number;                      // 2000–5000 Hz
+	bands           : [BandCompressorParams, BandCompressorParams, BandCompressorParams];
+};
+
+export type DynamicEqParams = {
+	frequencyHz : number; // 500–9000 Hz
+	Q           : number; // 0.5–8
+	thresholdDb : number; // -40 to -12 dB
+	maxCutDb    : number; // 1–9 dB
+	attackMs    : number; // 2–20 ms
+	releaseMs   : number; // 80–300 ms
+};
+
+export type NoiseColor = "white" | "pink";
+
+export type ExpanderParams = {
+	thresholdDb          : number;    // -60 to -35 dB
+	ratio                : number;    // 1.2–2.5
+	maxDepthDb           : number;    // 6–18 dB
+	attackMs             : number;    // 10–50 ms
+	releaseMs            : number;    // 200–1000 ms
+	comfortNoiseLevelDb  : number;    // -70 to -55 dB
+	noiseColor           : NoiseColor;
+};
+
+export type PseudoStereoParams = {
+	sideDelayMs    : number; // 3–12 ms
+	sideHighpassHz : number; // 500–1000 Hz
+	sideLowpassHz  : number; // 6000–12000 Hz
+	width          : number; // 0.05–0.35
+};

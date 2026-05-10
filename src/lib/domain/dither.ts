@@ -8,29 +8,27 @@
 // No processing after dither.
 
 import { clamp } from "./dsp";
+import { createXorshift32 } from "./prng";
 
 // ── Seeded deterministic RNG ──
 // Ensures identical dither for identical input (noise is deterministic
 // across runs, not cryptographic). Seed is fixed by default but
 // overridable for testing.
 
-let _ditherSeed = 42;
+let _ditherRng = createXorshift32(42);
 
 /**
  * Override the dither RNG seed. Useful for deterministic testing.
  */
 export function setDitherSeed(seed: number): void {
-	_ditherSeed = seed;
+	_ditherRng = createXorshift32(seed);
 }
 
 /**
- * Simple seeded PRNG (xorshift32). Returns [0, 1).
+ * Get next uniform random value [0, 1) from the dither RNG.
  */
 function seededRandom(): number {
-	_ditherSeed ^= _ditherSeed << 13;
-	_ditherSeed ^= _ditherSeed >> 17;
-	_ditherSeed ^= _ditherSeed << 5;
-	return (_ditherSeed >>> 0) / 4294967296;
+	return _ditherRng();
 }
 
 /**

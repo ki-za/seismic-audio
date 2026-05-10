@@ -6,7 +6,6 @@ import type {
 } from "$lib/types";
 import {
 	applyFocus,
-	makeSaturationCurve,
 	measureRms,
 	prepareSamples,
 	dbToGain,
@@ -15,6 +14,7 @@ import { suppressImpulses } from "$lib/domain/impulse";
 import { lookAheadLimiter } from "$lib/domain/limiter";
 import { normalizeLoudness } from "$lib/domain/loudness";
 import { floatToInt16WithDither } from "$lib/domain/dither";
+import { makeAsymmetricSaturationCurve } from "$lib/domain/saturation";
 import type { ImpulseParams, LimiterParams } from "$lib/domain/types";
 
 export class CompressedSeismicPlayer {
@@ -316,8 +316,8 @@ export function configureChain(
 					: mode === "bright"
 						? 14000
 						: 12000;
-	nodes.shaper.curve = makeSaturationCurve(
-		mode === "soft"
+	nodes.shaper.curve = makeAsymmetricSaturationCurve({
+		drive: mode === "soft"
 			? 1.4
 			: mode === "clear"
 				? 2.2
@@ -326,7 +326,10 @@ export function configureChain(
 					: mode === "bright"
 						? 2.6
 						: 1.1,
-	) as Float32Array<ArrayBuffer>;
+		asymmetry: 0.04,
+		wetDryMix: 0.20,
+		outputTrimDb: -1.5,
+	}) as Float32Array<ArrayBuffer>;
 	nodes.limiter.threshold.value = compression.thresholdDb;
 	nodes.limiter.knee.value      = 12;
 	nodes.limiter.ratio.value     = compression.ratio;
