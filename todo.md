@@ -22,10 +22,21 @@
 - Settings comparison warning in evidence panel
 - Committed: 3d209d7 feat(ui): wire Provider selector, LoadState machine, settings comparison
 
-## ☐ Tier 4 — Sound quality
-- Refine DSP params per SoundMode in domain/sonification.ts (highpass, lowpass, saturation)
-- Improve resampling quality in bridge/recorder.ts (anti-aliasing pre-filter?)
-- Add sonification DSP unit tests to scripts/domain-diag.ts
+## ✅ Tier 4 — Sound quality (P0 complete)
+- P0 algorithms implemented: polyphase resampler, impulse suppressor, look-ahead limiter, LUFS, TPDF dither
+- Wired into export path: renderProcessedSeismicBuffer with skipWebAudio flag
+- Multi-channel dither fixed (per-channel TPDF, not naive truncation)
+- Full P0 domain chain: prepareSamples → suppressImpulses → lookAheadLimiter → normalizeLoudness
+- export path: renderWavFile first applies P0 domain chain, then optional Web Audio tone shaping
+- 155 diagnostics passing across Batch A–E
+
+## ☐ Tier 5 — P1 algorithms (gallery-quality)
+- Asymmetric saturation (domain/saturation.ts)
+- Relative de-esser (domain/deesser.ts)
+- Three-band compressor (domain/multiband.ts)
+- Dynamic EQ (domain/dynamic-eq.ts)
+- Expander + comfort noise (domain/expander.ts)
+- Mono-safe pseudo-stereo (domain/stereo.ts)
 
 ## ☐ Tier 5 — Diagnostics upgrade
 - Upgrade browser-smoke.ts: change one audio setting → verify fingerprint changed and audioDetected

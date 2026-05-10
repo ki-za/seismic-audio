@@ -12,8 +12,10 @@ import {
 	dbToGain,
 } from "$lib/domain/sonification";
 import { suppressImpulses } from "$lib/domain/impulse";
+import { lookAheadLimiter } from "$lib/domain/limiter";
+import { normalizeLoudness } from "$lib/domain/loudness";
 import { floatToInt16WithDither } from "$lib/domain/dither";
-import type { ImpulseParams } from "$lib/domain/types";
+import type { ImpulseParams, LimiterParams } from "$lib/domain/types";
 
 export class CompressedSeismicPlayer {
 	private context    : AudioContext | null          = null;
@@ -144,20 +146,50 @@ const EXPORT_IMPULSE_PARAMS: ImpulseParams = {
 	blend           : 1.0,
 };
 
+const EXPORT_LIMITER_PARAMS: LimiterParams = {
+	ceilingDb     : -1,
+	lookAheadMs   : 5,
+	releaseMs     : 200,
+	softClipKnee  : 0.92,
+	softClipDrive : 1.2,
+};
+
+const EXPORT_LUFS_TARGET = -18;
+
 /**
- * Same as renderProcessedSeismicBuffer but with P0 impulse suppression
- * applied before the Web Audio chain.
+ * Render a seismic window to an AudioBuffer, optionally skipping Web Audio tone shaping.
+ *
+ * When skipWebAudio is false (default), runs:
+ *   prepareSamples → suppressImpulses → [OfflineAudioContext tone shaping] → AudioBuffer
+ * (Legacy path: impulse suppression + Web Audio filters/saturation/compressor.)
+ *
+ * When skipWebAudio is true, runs the full P0 domain chain:
+ *   prepareSamples → suppressImpulses → lookAheadLimiter → normalizeLoudness
+ * → AudioBuffer (no Web Audio dependency, pure Float32Array math.)
  */
 export async function renderProcessedSeismicBuffer(
 	window      : AudioWindow,
 	mode        : SoundMode,
 	compression : CompressionSettings,
-	focus: ListeningFocus = "gentle",
+	focus       : ListeningFocus       = "gentle",
+	skipWebAudio: boolean              = false,
 ): Promise<AudioBuffer> {
 	let samples = prepareSamples(window.samples, mode);
 
-	// P0: Hampel impulse suppression (de-click before tone shaping)
+	// P0 domain chain
 	samples = suppressImpulses(samples, EXPORT_IMPULSE_PARAMS);
+
+	if (skipWebAudio) {
+		// Domain-only: add limiter + LUFS, return as AudioBuffer
+		samples = lookAheadLimiter(samples, window.renderedSampleRate, EXPORT_LIMITER_PARAMS);
+		samples = normalizeLoudness(samples, window.renderedSampleRate, EXPORT_LUFS_TARGET);
+
+		const buffer = new AudioBuffer({ length: samples.length, sampleRate: window.renderedSampleRate });
+		buffer.getChannelData(0).set(samples);
+		return buffer;
+	}
+
+	// Full Web Audio chain (legacy path)
 	const offline = new OfflineAudioContext(
 		1,
 		samples.length,
@@ -245,15 +277,11 @@ export function audioBufferToWavBlob(buffer: AudioBuffer): Blob {
 			offset += 2;
 		}
 	} else {
-		// Multi-channel: per-channel dither (each Float32Array is the channel data)
+		// Multi-channel: frame-interleaved with per-channel TPDF dither
+		const ditheredChannels = channelData.map(c => floatToInt16WithDither(c));
 		for (let frame = 0; frame < frames; frame += 1) {
 			for (let channel = 0; channel < channels; channel += 1) {
-				const sample = Math.max(-1, Math.min(1, channelData[channel][frame]));
-				view.setInt16(
-					offset,
-					sample < 0 ? sample * 0x8000 : sample * 0x7fff,
-					true,
-				);
+				view.setInt16(offset, ditheredChannels[channel][frame], true);
 				offset += 2;
 			}
 		}
@@ -264,7 +292,7 @@ export function audioBufferToWavBlob(buffer: AudioBuffer): Blob {
 
 // ── Web Audio adapter helpers (depend on browser API) ──
 
-function configureChain(
+export function configureChain(
 	nodes: {
 		highpass : BiquadFilterNode;
 		lowpass  : BiquadFilterNode;
