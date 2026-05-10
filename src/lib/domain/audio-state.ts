@@ -6,7 +6,7 @@ import type {
 	ListeningFocus,
 	RenderQuality,
 	SoundMode,
-} from "$lib/types";
+} from "$lib/domain/types";
 import type { ProviderId } from "$lib/domain/provider-id";
 
 export type AudioRequestKeyInput = {

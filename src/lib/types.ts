@@ -8,6 +8,9 @@ import type {
 	CompressionSettings,
 	AudioMetrics,
 	AudioSettingsSnapshot,
+	AudioWindow,
+	AudioLoadMetadata,
+	ChannelAttempt,
 } from "$lib/domain/types";
 
 // Re-export domain types for backward compatibility
@@ -18,6 +21,9 @@ export type {
 	CompressionSettings,
 	AudioMetrics,
 	AudioSettingsSnapshot,
+	AudioWindow,
+	AudioLoadMetadata,
+	ChannelAttempt,
 };
 
 export type BridgeStatus = {
@@ -30,23 +36,7 @@ export type BridgeStatus = {
 	startedAtMs       : number;
 };
 
-export type ChannelAttempt = {
-	channel : string;
-	status  : "ok" | "empty" | "error";
-	error?  : string;
-};
 
-export type AudioLoadMetadata = {
-	loadedAtISO           : string;
-	requestHost?          : string;
-	delayMinutes?         : number;
-	requestedStartISO?    : string;
-	requestedEndISO?      : string;
-	requestedChannel?     : string;
-	actualChannel         : string;
-	channelFallbackOrder? : string[];
-	attemptedChannels?    : ChannelAttempt[];
-};
 
 export type PlaybackState = {
 	state                : "stopped" | "starting" | "playing" | "failed";
@@ -58,23 +48,7 @@ export type PlaybackState = {
 	lastMeterChangeAtMs? : number;
 };
 
-export type AudioWindow = {
-	channel            : string;
-	windowSeconds      : number;
-	playbackSeconds    : number;
-	sourceSampleRate   : number;
-	renderedSampleRate : number;
-	samples            : number[];
-	availableSeconds   : number;
-	network?           : string;
-	station?           : string;
-	location?          : string;
-	startISO?          : string;
-	endISO?            : string;
-	source?            : "bridge" | "raspberryshake";
-	metadata?          : AudioLoadMetadata;
-	metrics?           : AudioMetrics;
-};
+
 
 export type WindowChoice = {
 	label   : string;

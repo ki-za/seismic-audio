@@ -127,3 +127,52 @@ export type PseudoStereoParams = {
 	sideLowpassHz  : number; // 6000–12000 Hz
 	width          : number; // 0.05–0.35
 };
+
+// ── Cross-Boundary Types (defined here so domain can reference them) ──
+
+/**
+ * Metadata about a single attempted channel load.
+ */
+export type ChannelAttempt = {
+	channel : string;
+	status  : "ok" | "empty" | "error";
+	error?  : string;
+};
+
+/**
+ * Metadata about how/where the audio window was loaded.
+ */
+export type AudioLoadMetadata = {
+	loadedAtISO           : string;
+	requestHost?          : string;
+	delayMinutes?         : number;
+	requestedStartISO?    : string;
+	requestedEndISO?      : string;
+	requestedChannel?     : string;
+	actualChannel         : string;
+	channelFallbackOrder? : string[];
+	attemptedChannels?    : ChannelAttempt[];
+};
+
+/**
+ * Audio window — the core data contract flowing across boundaries.
+ * Defined in the domain so domain functions can reference it without
+ * depending on cross-boundary types.
+ */
+export type AudioWindow = {
+	channel            : string;
+	windowSeconds      : number;
+	playbackSeconds    : number;
+	sourceSampleRate   : number;
+	renderedSampleRate : number;
+	samples            : number[];
+	availableSeconds   : number;
+	network?           : string;
+	station?           : string;
+	location?          : string;
+	startISO?          : string;
+	endISO?            : string;
+	source?            : "bridge" | "raspberryshake";
+	metadata?          : AudioLoadMetadata;
+	metrics?           : AudioMetrics;
+};
