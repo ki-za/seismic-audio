@@ -1,5 +1,9 @@
 <script lang="ts">
 	import { isAppError, buildAudioSettingsSnapshot, buildRequestKey, fingerprintAudioSettings, getAudioPlayer, getBridgeStatus, connectBridgeStatus, loadWindow, playPrepared, prepareSamplesChunked, exportWav, makeExportName, makeExportMetadata, selectProvider, compareAudioSettings, advanceLoadState } from '$lib/composition/main';
+	import { 
+		DEFAULT_DSP_TUNING,
+		type DspTuningState
+	} from '$lib/application/dsp-tuning';
 	import { initialLoadState, loadStateLabel } from '$lib/domain/load-state';
 	import type { AppError } from '$lib/core/errors';
 	import type { LoadStateSnapshot } from '$lib/domain/load-state';
@@ -66,6 +70,8 @@
 	let activeFingerprint = $state<string | null>(null);
 	let isExporting = $state(false);
 	let loadState = $state<LoadStateSnapshot>(initialLoadState());
+	let dspTuning = $state<DspTuningState>(structuredClone(DEFAULT_DSP_TUNING));
+	let dspSectionOpen = $state(false);
 
 	const player = getAudioPlayer();
 	player.setLevelCallback((level) => (audioLevel = level));
@@ -147,9 +153,13 @@
 		try {
 			// Phase 1: prepare samples in chunks with progress feedback
 			playPhase = 'rendering';
-			const samples = await prepareSamplesChunked(lastAudioWindow.samples, soundMode, (pct) => {
-				dspProgress = Math.round(pct * 100);
-			});
+			const samples = await prepareSamplesChunked(
+				lastAudioWindow.samples,
+				soundMode,
+				(pct) => { dspProgress = Math.round(pct * 100); },
+				lastAudioWindow.renderedSampleRate,
+				dspTuning,
+			);
 			// Phase 2: start Web Audio (creates/resumes AudioContext, wires nodes)
 			playPhase = 'starting';
 			await playPrepared(samples, lastAudioWindow.renderedSampleRate, soundMode, compression, listeningFocus);
@@ -393,6 +403,63 @@
 					<label>Makeup <input type="range" min="0" max="12" bind:value={compression.makeupDb} /> <span>+{compression.makeupDb} dB</span></label>
 				</div>
 			</div>
+
+				<div class="group wide dsp-section">
+				<div class="dsp-header-row">
+					<button class="dsp-toggle" onclick={() => (dspSectionOpen = !dspSectionOpen)}>
+						<span class="dsp-arrow">{dspSectionOpen ? '▾' : '▸'}</span>
+						DSP Tuning
+						<small>
+							{dspTuning.impulse.enabled ? 'impulse ' : ''}
+							{dspTuning.saturation.enabled ? 'saturation ' : ''}
+							{dspTuning.expander.enabled ? 'expander' : ''}
+							{!dspTuning.impulse.enabled && !dspTuning.saturation.enabled && !dspTuning.expander.enabled ? 'all off' : ''}
+						</small>
+					</button>
+					<a class="dsp-docs-link" href="/dsp-guide" title="DSP tuning guide">󰈙</a>
+				</div>
+				{#if dspSectionOpen}
+					<div class="dsp-controls">
+						<div class="dsp-stage">
+							<label class="dsp-stage-header">
+								<input type="checkbox" bind:checked={dspTuning.impulse.enabled} />
+								Impulse suppression <small>Hampel / median click repair</small>
+							</label>
+							<div class="knobs">
+								<label>Radius <input type="range" min="1" max="8" bind:value={dspTuning.impulse.radius} /> <span>{dspTuning.impulse.radius}</span></label>
+								<label>Threshold <input type="range" min="4" max="14" step="0.5" bind:value={dspTuning.impulse.thresholdMAD} /> <span>{dspTuning.impulse.thresholdMAD} MAD</span></label>
+								<label>Blend <input type="range" min="0" max="1" step="0.05" bind:value={dspTuning.impulse.blend} /> <span>{dspTuning.impulse.blend.toFixed(2)}</span></label>
+							</div>
+						</div>
+						<div class="dsp-stage">
+							<label class="dsp-stage-header">
+								<input type="checkbox" bind:checked={dspTuning.saturation.enabled} />
+								Asymmetric saturation <small>P1 — harmonic warmth</small>
+							</label>
+							<div class="knobs">
+								<label>Drive <input type="range" min="1" max="4" step="0.1" bind:value={dspTuning.saturation.drive} /> <span>{dspTuning.saturation.drive.toFixed(1)}</span></label>
+								<label>Knee <input type="range" min="0.4" max="0.98" step="0.02" bind:value={dspTuning.saturation.knee} /> <span>{dspTuning.saturation.knee.toFixed(2)}</span></label>
+								<label>Asymmetry <input type="range" min="0" max="0.25" step="0.01" bind:value={dspTuning.saturation.asymmetry} /> <span>{dspTuning.saturation.asymmetry.toFixed(2)}</span></label>
+								<label>Wet/dry <input type="range" min="0" max="0.5" step="0.05" bind:value={dspTuning.saturation.wetDryMix} /> <span>{dspTuning.saturation.wetDryMix.toFixed(2)}</span></label>
+								<label>Trim <input type="range" min="-6" max="0" step="0.5" bind:value={dspTuning.saturation.outputTrimDb} /> <span>{dspTuning.saturation.outputTrimDb.toFixed(1)} dB</span></label>
+							</div>
+						</div>
+						<div class="dsp-stage">
+							<label class="dsp-stage-header">
+								<input type="checkbox" bind:checked={dspTuning.expander.enabled} />
+								Downward expander <small>P1 — noise gate with comfort noise</small>
+							</label>
+							<div class="knobs">
+								<label>Threshold <input type="range" min="-70" max="-30" bind:value={dspTuning.expander.thresholdDb} /> <span>{dspTuning.expander.thresholdDb} dB</span></label>
+								<label>Ratio <input type="range" min="1.2" max="3" step="0.1" bind:value={dspTuning.expander.ratio} /> <span>{dspTuning.expander.ratio.toFixed(1)}:1</span></label>
+								<label>Depth <input type="range" min="4" max="20" bind:value={dspTuning.expander.maxDepthDb} /> <span>{dspTuning.expander.maxDepthDb} dB</span></label>
+								<label>Attack <input type="range" min="5" max="60" bind:value={dspTuning.expander.attackMs} /> <span>{dspTuning.expander.attackMs} ms</span></label>
+								<label>Release <input type="range" min="100" max="1000" bind:value={dspTuning.expander.releaseMs} /> <span>{dspTuning.expander.releaseMs} ms</span></label>
+							</div>
+						</div>
+					</div>
+				{/if}
+			</div>
 		</div>
 
 		<div class="actions">
@@ -404,6 +471,8 @@
 			<button onclick={downloadWav} disabled={isExporting || !lastAudioWindow}>{isExporting ? 'Rendering WAV…' : 'Download WAV + metadata'}</button>
 			<button onclick={showMode ? exitShowMode : enterShowMode}>{showMode ? 'Exit show mode' : 'Fullscreen show mode'}</button>
 		</div>
+
+		<button class="dsp-reset" onclick={() => { dspTuning = structuredClone(DEFAULT_DSP_TUNING); }}>Reset DSP to defaults</button>
 
 		{#if error}
 			<div class="error" data-testid="error-message">

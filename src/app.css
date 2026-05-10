@@ -81,6 +81,33 @@ button:hover, button.selected { background: rgba(217,169,95,0.28); border-color:
 button.primary { background: #f0b76a; color: #120f0b; border: 0; }
 .hint { color: #e7c88f; }
 code { color: #f0b76a; }
+.dsp-section { border: 1px solid rgba(255,255,255,0.08); border-radius: 1rem; padding: 0; margin-top: .5rem; }
+.dsp-header-row { display: flex; align-items: center; }
+.dsp-docs-link {
+	margin-left: auto; padding: .5rem .7rem;
+	color: #8f806e; text-decoration: none; font-size: .85rem;
+}
+.dsp-docs-link:hover { color: #f0b76a; }
+.dsp-toggle {
+	width: 100%; display: flex; align-items: center; gap: .5rem;
+	border: 0; border-radius: 1rem; padding: .6rem 1rem;
+	background: transparent; color: #d9a95f; font-size: .85rem;
+	cursor: pointer;
+}
+.dsp-toggle:hover { background: rgba(255,255,255,0.04); }
+.dsp-arrow { color: #8f806e; transition: transform .15s; }
+.dsp-controls { display: grid; gap: 1rem; padding: 0 .8rem .8rem; }
+.dsp-stage { border-top: 1px solid rgba(255,255,255,0.06); padding-top: .75rem; }
+.dsp-stage-header {
+	display: flex; align-items: center; gap: .55rem;
+	color: #c8bda9; font-size: .82rem; margin-bottom: .35rem;
+}
+.dsp-stage-header input[type="checkbox"] { accent-color: #f0b76a; }
+.dsp-stage .knobs { grid-template-columns: repeat(5, minmax(0, 1fr)); gap: .45rem; }
+.dsp-reset {
+	margin-top: .5rem; width: 100%;
+	color: #8f806e; font-size: .75rem;
+}
 .meter { height: .45rem; overflow: hidden; border-radius: 999px; background: rgba(255,255,255,0.1); }
 .meter span { display: block; height: 100%; width: 0; border-radius: inherit; background: linear-gradient(90deg, #7ecb8f, #f0b76a); transition: width .08s linear; }
 .error { margin-top: 1rem; padding: .9rem; border: 1px solid rgba(255, 180, 168, .35); border-radius: .9rem; color: #ffd1ca; background: rgba(120, 30, 20, .22); }
