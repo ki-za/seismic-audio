@@ -4,6 +4,9 @@ import type {
 	RenderQuality,
 } from "../src/lib/types";
 
+import type { PolyphaseOptions } from "../src/lib/domain/types";
+import { resamplePolyphase, polyphaseOptionsForQuality } from "../src/lib/domain/resampling";
+
 type ChannelBuffer = {
 	samples           : number[];
 	latestTimestampMs : number | null;
@@ -79,7 +82,11 @@ export class RollingRecorder {
 			1,
 			Math.floor(options.playbackSeconds * renderedSampleRate),
 		);
-		const compressed = resample(selected, outputCount);
+		const compressed = resamplePolyphase(
+			selected,
+			outputCount,
+			polyphaseOptionsForQuality(options.quality === "installation-safe" ? "preview" : "export"),
+		);
 
 		return {
 			channel,
@@ -95,7 +102,7 @@ export class RollingRecorder {
 				actualChannel    : channel,
 				requestedChannel : options.channel ?? channel,
 			},
-			metrics: measureSamples(compressed, renderedSampleRate),
+			metrics: measureSamples(compressed as unknown as number[], renderedSampleRate),
 		};
 	}
 }

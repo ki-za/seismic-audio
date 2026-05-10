@@ -11,6 +11,9 @@ import {
 	prepareSamples,
 	dbToGain,
 } from "$lib/domain/sonification";
+import { suppressImpulses } from "$lib/domain/impulse";
+import { floatToInt16WithDither } from "$lib/domain/dither";
+import type { ImpulseParams } from "$lib/domain/types";
 
 export class CompressedSeismicPlayer {
 	private context    : AudioContext | null          = null;
@@ -130,13 +133,31 @@ const defaultCompression: CompressionSettings = {
 	makeupDb    : 0,
 };
 
+/**
+ * Default impulse suppression params for the offline render path.
+ * Conservative: radius 3, threshold 8 MAD, max 3-sample repair.
+ */
+const EXPORT_IMPULSE_PARAMS: ImpulseParams = {
+	radius          : 3,
+	thresholdMAD    : 8,
+	maxRepairLength : 3,
+	blend           : 1.0,
+};
+
+/**
+ * Same as renderProcessedSeismicBuffer but with P0 impulse suppression
+ * applied before the Web Audio chain.
+ */
 export async function renderProcessedSeismicBuffer(
 	window      : AudioWindow,
 	mode        : SoundMode,
 	compression : CompressionSettings,
 	focus: ListeningFocus = "gentle",
 ): Promise<AudioBuffer> {
-	const samples = prepareSamples(window.samples, mode);
+	let samples = prepareSamples(window.samples, mode);
+
+	// P0: Hampel impulse suppression (de-click before tone shaping)
+	samples = suppressImpulses(samples, EXPORT_IMPULSE_PARAMS);
 	const offline = new OfflineAudioContext(
 		1,
 		samples.length,
@@ -215,15 +236,26 @@ export function audioBufferToWavBlob(buffer: AudioBuffer): Blob {
 	const channelData = Array.from({ length: channels }, (_, channel) =>
 		buffer.getChannelData(channel),
 	);
-	for (let frame = 0; frame < frames; frame += 1) {
-		for (let channel = 0; channel < channels; channel += 1) {
-			const sample = Math.max(-1, Math.min(1, channelData[channel][frame]));
-			view.setInt16(
-				offset,
-				sample < 0 ? sample * 0x8000 : sample * 0x7fff,
-				true,
-			);
+
+	if (channels === 1) {
+		// Mono: use TPDF dither before truncation
+		const dithered = floatToInt16WithDither(channelData[0]);
+		for (let frame = 0; frame < frames; frame += 1) {
+			view.setInt16(offset, dithered[frame], true);
 			offset += 2;
+		}
+	} else {
+		// Multi-channel: per-channel dither (each Float32Array is the channel data)
+		for (let frame = 0; frame < frames; frame += 1) {
+			for (let channel = 0; channel < channels; channel += 1) {
+				const sample = Math.max(-1, Math.min(1, channelData[channel][frame]));
+				view.setInt16(
+					offset,
+					sample < 0 ? sample * 0x8000 : sample * 0x7fff,
+					true,
+				);
+				offset += 2;
+			}
 		}
 	}
 
