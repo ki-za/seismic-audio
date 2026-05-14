@@ -58,7 +58,14 @@ h1 { max-width: 11ch; margin: 0; font-size: clamp(3.5rem, 10vw, 8.5rem); line-he
 .group p { margin: 0 0 .45rem; color: #d9a95f; }
 .group small { color: #8f806e; font-weight: 400; }
 .buttons, .actions { display: flex; flex-wrap: wrap; gap: .5rem; }
-.station-list { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: .5rem; }
+.station-search { margin-bottom: .5rem; }
+.station-search label { display: grid; gap: .3rem; color: #8f806e; font-size: .8rem; }
+.station-search input {
+	width: 100%; border: 1px solid rgba(255,255,255,0.14); border-radius: 999px;
+	padding: .7rem 1rem; color: #f5efe3; background: rgba(255,255,255,0.07);
+}
+.station-search input:focus { outline: 1px solid rgba(217,169,95,0.65); }
+.station-list { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: .5rem; max-height: 18rem; overflow: auto; padding-right: .2rem; }
 .station-list button { border-radius: 1rem; text-align: left; }
 .station-list strong, .station-list span { display: block; }
 .station-list span, .readout { color: #c8bda9; font-size: .82rem; }

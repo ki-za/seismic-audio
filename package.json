@@ -13,7 +13,9 @@
     "smoke:browser": "bun run scripts/browser-smoke.ts",
     "diagnose": "bun run scripts/run-diagnostics.ts",
     "diagnose:dsp": "bun run scripts/dsp-chunked-diag.ts",
-    "diagnose:domain": "bun run scripts/domain-diag.ts"
+    "diagnose:domain": "bun run scripts/domain-diag.ts",
+    "diagnose:stations": "bun run scripts/station-catalog-diag.ts",
+    "refresh:stations": "bun run scripts/refresh-raspberry-shake-stations.ts"
   },
   "devDependencies": {
     "@sveltejs/adapter-static": "latest",

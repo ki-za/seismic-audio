@@ -1,5 +1,5 @@
 <script lang="ts">
-	import { isAppError, buildAudioSettingsSnapshot, buildRequestKey, fingerprintAudioSettings, getAudioPlayer, getBridgeStatus, connectBridgeStatus, loadWindow, playPrepared, prepareSamplesChunked, exportWav, makeExportName, makeExportMetadata, selectProvider, compareAudioSettings, advanceLoadState } from '$lib/composition/main';
+	import { isAppError, buildAudioSettingsSnapshot, buildRequestKey, fingerprintAudioSettings, getAudioPlayer, getBridgeStatus, connectBridgeStatus, loadWindow, playPrepared, prepareSamplesChunked, exportWav, makeExportName, makeExportMetadata, selectProvider, compareAudioSettings, advanceLoadState, raspberryShakeStations, searchStations, toStationChoice } from '$lib/composition/main';
 	import { 
 		DEFAULT_DSP_TUNING,
 		type DspTuningState
@@ -36,20 +36,26 @@
 		{ label: 'Texture', value: 'texture' },
 		{ label: 'Scientific-ish', value: 'scientific' }
 	];
-	const stations: StationChoice[] = [
-		{ id: 'local', name: 'Synthetic / LAN bridge', place: 'local bridge feed', channelHint: 'bridge channel', status: 'synthetic' },
-		{ id: 'RD432', name: 'RD432', place: 'Raspberry Shake AM network', channelHint: 'AM.RD432.00.EHZ', status: 'archive' },
-		{ id: 'R5022', name: 'R5022', place: 'Raspberry Shake AM network', channelHint: 'AM.R5022.00.EHZ', status: 'archive' },
-		{ id: 'RCA97', name: 'RCA97', place: 'Raspberry Shake AM network', channelHint: 'AM.RCA97.00.EHZ', status: 'archive' },
-		{ id: 'R83E1', name: 'R83E1', place: 'Raspberry Shake AM network', channelHint: 'AM.R83E1.00.EHZ', status: 'archive' },
-		{ id: 'R5156', name: 'R5156', place: 'Raspberry Shake AM network', channelHint: 'AM.R5156.00.EHZ', status: 'archive' }
-	];
+	const localStation: StationChoice = { id: 'local', name: 'Synthetic / LAN bridge', place: 'local bridge feed', channelHint: 'bridge channel', status: 'synthetic' };
+	const favouriteStationMetadata = [
+		{ id: 'S99EB', place: 'Mexico' },
+		{ id: 'R9B86', place: 'Canada' },
+		{ id: 'S2C02', place: 'South Africa' },
+		{ id: 'R135F', place: 'Iceland' },
+		{ id: 'R4C3D', place: 'China' }
+	] as const;
+	const favouriteStationIds: string[] = favouriteStationMetadata.map((station) => station.id);
+	const favouriteStations = raspberryShakeStations
+		.filter((station) => favouriteStationIds.includes(station.code))
+		.map(toStationChoice);
+	const archiveStationsById = new Map(raspberryShakeStations.map((station) => [station.code, toStationChoice(station)]));
 
 	let status = $state<BridgeStatus | null>(null);
 	let connection = $state('connecting');
 	let selectedWindowSeconds = $state(windows[1].seconds);
 	let selectedPlaybackSeconds = $state(playbacks[2].seconds);
-	let selectedStationId = $state(stations[0].id);
+	let selectedStationId = $state(localStation.id);
+	let stationSearch = $state('');
 	let soundMode = $state<SoundMode>('soft');
 	let renderQuality = $state<RenderQuality>('balanced');
 	let listeningFocus = $state<ListeningFocus>('gentle');
@@ -78,7 +84,8 @@
 
 	const selectedWindow = $derived(windows.find((choice) => choice.seconds === selectedWindowSeconds) ?? windows[0]);
 	const selectedPlayback = $derived(playbacks.find((choice) => choice.seconds === selectedPlaybackSeconds) ?? playbacks[0]);
-	const selectedStation = $derived(stations.find((station) => station.id === selectedStationId) ?? stations[0]);
+	const visibleArchiveStations = $derived(searchStations(raspberryShakeStations, stationSearch, favouriteStationIds, 30).map(toStationChoice));
+	const selectedStation = $derived(selectedStationId === localStation.id ? localStation : archiveStationsById.get(selectedStationId) ?? favouriteStations[0] ?? localStation);
 	const compressionText = $derived(`${selectedWindow.label} → ${selectedPlayback.label}`);
 	const availabilityText = $derived(selectedStation.id === 'local' ? (status ? formatDuration(status.secondsStored) : 'no data yet') : 'archive request uses now - 35 min');
 	const bridgeText = $derived(status ? `${status.samplesStored.toLocaleString()} local samples · ${status.channels.join(', ') || 'no local channel yet'}` : 'waiting for bridge');
@@ -297,21 +304,40 @@
 			<div class="group wide">
 				<p>Provider <small>{providerInfo.label}</small></p>
 				<div class="buttons">
-					<button class={providerInfo.id === 'bridge' ? 'selected' : ''} onclick={() => (selectedStationId = 'local')}>󰓅 Bridge</button>
-					<button class={providerInfo.id === 'raspberryshake' ? 'selected' : ''} onclick={() => (selectedStationId = stations[1]?.id ?? 'RD432')}>󰀂 Archive</button>
+					<button class={providerInfo.id === 'bridge' ? 'selected' : ''} onclick={() => (selectedStationId = localStation.id)}>󰓅 Bridge</button>
+					<button class={providerInfo.id === 'raspberryshake' ? 'selected' : ''} onclick={() => (selectedStationId = favouriteStations[0]?.id ?? 'RD432')}>󰀂 Archive</button>
 				</div>
 				<p class="readout">{providerInfo.isArchive ? 'Archive uses data.raspberryshake.org, -35 min delay' : 'Local bridge buffer, rolling window'}</p>
 			</div>
 
 			<div class="group wide">
 				<p>Station / location <small>selected ≠ loaded</small></p>
+				<div class="station-search">
+					<label>
+						<span>Search by station code or place</span>
+						<input bind:value={stationSearch} placeholder="R0066, California, Jamaica…" autocomplete="off" />
+					</label>
+				</div>
 				<div class="station-list">
-					{#each stations as station (station.id)}
-						<button class={station.id === selectedStationId ? 'selected' : ''} onclick={() => (selectedStationId = station.id)}>
-							<strong>{station.name}</strong>
-							<span>{station.place} · {station.id === selectedStationId ? loadedState : 'untested'}</span>
-						</button>
-					{/each}
+					<button class={localStation.id === selectedStationId ? 'selected' : ''} onclick={() => (selectedStationId = localStation.id)}>
+						<strong>{localStation.name}</strong>
+						<span>{localStation.place} · {localStation.id === selectedStationId ? loadedState : 'untested'}</span>
+					</button>
+					{#if !stationSearch.trim()}
+						{#each favouriteStations as station (station.id)}
+							<button class={station.id === selectedStationId ? 'selected' : ''} onclick={() => (selectedStationId = station.id)}>
+								<strong>★ {station.name}</strong>
+								<span>{station.place} · {station.id === selectedStationId ? loadedState : 'untested'}</span>
+							</button>
+						{/each}
+					{:else}
+						{#each visibleArchiveStations as station (station.id)}
+							<button class={station.id === selectedStationId ? 'selected' : ''} onclick={() => (selectedStationId = station.id)}>
+								<strong>{station.name}</strong>
+								<span>{station.place} · {station.id === selectedStationId ? loadedState : 'untested'}</span>
+							</button>
+						{/each}
+					{/if}
 				</div>
 				<p class="readout">Selected channel target: {activeChannel}</p>
 			</div>

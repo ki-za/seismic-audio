@@ -1,15 +1,28 @@
+import stationCatalog from "../static/data/raspberry-shake-stations-live.json";
+
 export const DEFAULT_NETWORK       = "AM";
 export const DEFAULT_LOCATION      = "00";
 export const DEFAULT_CHANNEL       = "EHZ";
 export const DEFAULT_DELAY_MINUTES = 35;
 
-export const RASPBERRY_SHAKE_STATIONS = [
-	{ network : "AM", station : "RD432", location : "00", defaultChannel : "EHZ" },
-	{ network : "AM", station : "R5022", location : "00", defaultChannel : "EHZ" },
-	{ network : "AM", station : "RCA97", location : "00", defaultChannel : "EHZ" },
-	{ network : "AM", station : "R83E1", location : "00", defaultChannel : "EHZ" },
-	{ network : "AM", station : "R5156", location : "00", defaultChannel : "EHZ" },
-] as const;
+type StationCatalogEntry = {
+	code          : string;
+	network       : string;
+	location?     : string;
+	knownChannels : string[];
+};
+
+type StationConfig = {
+	network        : string;
+	station        : string;
+	location       : string;
+	defaultChannel : string;
+	channels       : readonly string[];
+};
+
+const stationCatalogByCode = new Map(
+	(stationCatalog.stations as StationCatalogEntry[]).map((station) => [station.code, station]),
+);
 
 export const AUTO_CHANNELS = [
 	"EHZ",
@@ -25,8 +38,7 @@ export const AUTO_CHANNELS = [
 	"ENN",
 ] as const;
 
-export type RaspberryShakeStation =
-	(typeof RASPBERRY_SHAKE_STATIONS)[number]["station"];
+export type RaspberryShakeStation = string;
 
 export type ChannelAttempt = {
 	channel : string;
@@ -56,10 +68,28 @@ export type SeismicTrace = {
 	};
 };
 
-export function isKnownStation(
-	station: string,
-): station is RaspberryShakeStation {
-	return RASPBERRY_SHAKE_STATIONS.some((entry) => entry.station === station);
+export function isKnownStation(station: string): station is RaspberryShakeStation {
+	return stationCatalogByCode.has(station);
+}
+
+function stationConfigFor(stationCode: string): StationConfig {
+	const catalogEntry = stationCatalogByCode.get(stationCode);
+	if (!catalogEntry) throw new Error(`Unknown Raspberry Shake station: ${stationCode}`);
+	const channels = uniqueChannels([
+		...catalogEntry.knownChannels,
+		...AUTO_CHANNELS,
+	]);
+	return {
+		network        : catalogEntry.network || DEFAULT_NETWORK,
+		station        : catalogEntry.code,
+		location       : catalogEntry.location || DEFAULT_LOCATION,
+		defaultChannel : channels[0] ?? DEFAULT_CHANNEL,
+		channels,
+	};
+}
+
+function uniqueChannels(channels: readonly string[]) {
+	return channels.filter((channel, index) => channel && channels.indexOf(channel) === index);
 }
 
 export async function loadRaspberryShakeTrace(options: {
@@ -68,16 +98,11 @@ export async function loadRaspberryShakeTrace(options: {
 	delayMinutes? : number;
 	channels?     : readonly string[];
 }): Promise<SeismicTrace> {
-	if (!isKnownStation(options.station))
-		throw new Error(`Unknown Raspberry Shake station: ${options.station}`);
-
-	const station = RASPBERRY_SHAKE_STATIONS.find(
-		(entry) => entry.station === options.station,
-	)!;
+	const station      = stationConfigFor(options.station);
 	const delayMinutes = options.delayMinutes ?? DEFAULT_DELAY_MINUTES;
 	const end          = new Date(Date.now() - delayMinutes * 60_000);
 	const start        = new Date(end.getTime() - options.windowSeconds * 1000);
-	const channels     = options.channels ?? AUTO_CHANNELS;
+	const channels     = options.channels ?? station.channels;
 	const attemptedChannels : ChannelAttempt[] = [];
 	let lastError           : unknown          = null;
 
