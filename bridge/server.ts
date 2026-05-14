@@ -7,10 +7,13 @@ import {
 } from "./recorder";
 import { loadRaspberryShakeTrace } from "./raspberryshake";
 import { startSyntheticFeed } from "./synthetic";
+import { createStaticAppResponder } from "./static-app";
 
 const udpPort  = Number.parseInt(Bun.env.UDP_PORT ?? "8888", 10);
 const httpPort = Number.parseInt(Bun.env.BRIDGE_PORT ?? "8787", 10);
 const mode     = (Bun.env.INPUT_MODE ?? "synthetic") as "synthetic" | "udp";
+const staticAppDir = Bun.env.PACKAGED_APP_DIR;
+const staticApp    = staticAppDir ? createStaticAppResponder(staticAppDir) : undefined;
 const recorder = new RollingRecorder({ sourceSampleRate: 100, maxHours: 72 });
 
 if (mode === "synthetic") {
@@ -36,10 +39,14 @@ const cors = { "Access-Control-Allow-Origin": "*" };
 const server = Bun.serve({
 	port: httpPort,
 
-	fetch(request, server) {
+	async fetch(request, server) {
 		if (server.upgrade(request)) return;
 
 		const url = new URL(request.url);
+
+		if (url.pathname === "/health") {
+			return Response.json({ ok: true, mode, udpPort, httpPort }, { headers: cors });
+		}
 
 		if (url.pathname === "/status") {
 			return Response.json(recorder.status(mode, udpPort), { headers: cors });
@@ -64,6 +71,9 @@ const server = Bun.serve({
 			return handleRaspberryShakeWindow(url);
 		}
 
+		const staticResponse = staticApp ? await staticApp(url) : undefined;
+		if (staticResponse) return staticResponse;
+
 		return new Response("not found", { status: 404, headers: cors });
 	},
 
@@ -79,6 +89,7 @@ setInterval(() => {
 }, 1000);
 
 console.log(`seismic bridge listening on http://localhost:${httpPort}`);
+if (staticAppDir) console.log(`serving packaged app from ${staticAppDir}`);
 
 async function handleRaspberryShakeWindow(url: URL) {
 	try {
