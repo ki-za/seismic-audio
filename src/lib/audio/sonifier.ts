@@ -1,10 +1,27 @@
-import type { AudioWindow, CompressionSettings, ListeningFocus, SoundMode } from '$lib/types';
+import type {
+	AudioWindow,
+	CompressionSettings,
+	ListeningFocus,
+	SoundMode,
+} from "$lib/types";
+import {
+	applyFocus,
+	measureRms,
+	prepareSamples,
+	dbToGain,
+} from "$lib/domain/sonification";
+import { suppressImpulses } from "$lib/domain/impulse";
+import { lookAheadLimiter } from "$lib/domain/limiter";
+import { normalizeLoudness } from "$lib/domain/loudness";
+import { floatToInt16WithDither } from "$lib/domain/dither";
+import { makeAsymmetricSaturationCurve } from "$lib/domain/saturation";
+import type { ImpulseParams, LimiterParams } from "$lib/domain/types";
 
 export class CompressedSeismicPlayer {
-	private context: AudioContext | null = null;
-	private active: AudioBufferSourceNode | null = null;
-	private meterTimer: number | null = null;
-	private onLevel: (level: number) => void = () => {};
+	private context    : AudioContext | null          = null;
+	private active     : AudioBufferSourceNode | null = null;
+	private meterTimer : number | null                = null;
+	onLevel: (level: number) => void = () => {};
 
 	setLevelCallback(callback: (level: number) => void) {
 		this.onLevel = callback;
@@ -12,7 +29,7 @@ export class CompressedSeismicPlayer {
 
 	async start() {
 		this.context ??= new AudioContext();
-		if (this.context.state !== 'running') await this.context.resume();
+		if (this.context.state !== "running") await this.context.resume();
 	}
 
 	stop() {
@@ -21,30 +38,49 @@ export class CompressedSeismicPlayer {
 		this.stopMeter();
 	}
 
-	async play(window: AudioWindow, mode: SoundMode, compression: CompressionSettings = defaultCompression, focus: ListeningFocus = 'gentle') {
+	/**
+	 * Play with pre-prepared Float32Array samples (caller already ran DSP).
+	 * This is the fast path — no synchronous prepareSamples here.
+	 */
+	async playPrepared(
+		samples            : Float32Array,
+		renderedSampleRate : number,
+		mode               : SoundMode,
+		compression        : CompressionSettings,
+		focus              : ListeningFocus,
+	) {
 		await this.start();
-		const context = this.context;
-		if (!context) return;
+		const context = this.context!;
 
 		this.stop();
-		const samples = prepareSamples(window.samples, mode);
-		const buffer = context.createBuffer(1, samples.length, window.renderedSampleRate);
+		const buffer = context.createBuffer(1, samples.length, renderedSampleRate);
 		buffer.getChannelData(0).set(samples);
 
-		const source = context.createBufferSource();
+		const source   = context.createBufferSource();
 		const highpass = context.createBiquadFilter();
-		const lowpass = context.createBiquadFilter();
-		const shaper = context.createWaveShaper();
-		const limiter = context.createDynamicsCompressor();
-		const gain = context.createGain();
+		const lowpass  = context.createBiquadFilter();
+		const shaper   = context.createWaveShaper();
+		const limiter  = context.createDynamicsCompressor();
+		const gain     = context.createGain();
 		const analyser = context.createAnalyser();
 
-		configureChain({ highpass, lowpass, shaper, limiter, gain }, mode, applyFocus(compression, focus));
+		configureChain(
+			{ highpass, lowpass, shaper, limiter, gain },
+			mode,
+			applyFocus(compression, focus),
+		);
 		analyser.fftSize = 1024;
 
 		source.buffer = buffer;
-		source.loop = true;
-		source.connect(highpass).connect(lowpass).connect(shaper).connect(limiter).connect(gain).connect(analyser).connect(context.destination);
+		source.loop   = true;
+		source
+			.connect(highpass)
+			.connect(lowpass)
+			.connect(shaper)
+			.connect(limiter)
+			.connect(gain)
+			.connect(analyser)
+			.connect(context.destination);
 		source.start();
 		this.active = source;
 		this.onLevel(measureRms(samples));
@@ -55,6 +91,23 @@ export class CompressedSeismicPlayer {
 				this.stopMeter();
 			}
 		};
+	}
+
+	/** Legacy path — does prepareSamples internally. Kept for backward compat. */
+	async play(
+		window : AudioWindow,
+		mode   : SoundMode,
+		compression : CompressionSettings = defaultCompression,
+		focus       : ListeningFocus      = "gentle",
+	) {
+		await this.start();
+		this.playPrepared(
+			prepareSamples(window.samples, mode),
+			window.renderedSampleRate,
+			mode,
+			compression,
+			focus,
+		);
 	}
 
 	private startMeter(analyser: AnalyserNode) {
@@ -75,57 +128,123 @@ export class CompressedSeismicPlayer {
 }
 
 const defaultCompression: CompressionSettings = {
-	thresholdDb: -12,
-	ratio: 16,
-	attackMs: 3,
-	releaseMs: 180,
-	makeupDb: 0
+	thresholdDb : -12,
+	ratio       : 16,
+	attackMs    : 3,
+	releaseMs   : 180,
+	makeupDb    : 0,
 };
 
+/**
+ * Default impulse suppression params for the offline render path.
+ * Conservative: radius 3, threshold 8 MAD, max 3-sample repair.
+ */
+const EXPORT_IMPULSE_PARAMS: ImpulseParams = {
+	radius          : 3,
+	thresholdMAD    : 8,
+	maxRepairLength : 3,
+	blend           : 1.0,
+};
+
+const EXPORT_LIMITER_PARAMS: LimiterParams = {
+	ceilingDb     : -1,
+	lookAheadMs   : 5,
+	releaseMs     : 200,
+	softClipKnee  : 0.92,
+	softClipDrive : 1.2,
+};
+
+const EXPORT_LUFS_TARGET = -18;
+
+/**
+ * Render a seismic window to an AudioBuffer, optionally skipping Web Audio tone shaping.
+ *
+ * When skipWebAudio is false (default), runs:
+ *   prepareSamples → suppressImpulses → [OfflineAudioContext tone shaping] → AudioBuffer
+ * (Legacy path: impulse suppression + Web Audio filters/saturation/compressor.)
+ *
+ * When skipWebAudio is true, runs the full P0 domain chain:
+ *   prepareSamples → suppressImpulses → lookAheadLimiter → normalizeLoudness
+ * → AudioBuffer (no Web Audio dependency, pure Float32Array math.)
+ */
 export async function renderProcessedSeismicBuffer(
-	window: AudioWindow,
-	mode: SoundMode,
-	compression: CompressionSettings,
-	focus: ListeningFocus = 'gentle'
+	window      : AudioWindow,
+	mode        : SoundMode,
+	compression : CompressionSettings,
+	focus       : ListeningFocus       = "gentle",
+	skipWebAudio: boolean              = false,
 ): Promise<AudioBuffer> {
-	const samples = prepareSamples(window.samples, mode);
-	const offline = new OfflineAudioContext(1, samples.length, window.renderedSampleRate);
+	let samples = prepareSamples(window.samples, mode);
+
+	// P0 domain chain
+	samples = suppressImpulses(samples, EXPORT_IMPULSE_PARAMS);
+
+	if (skipWebAudio) {
+		// Domain-only: add limiter + LUFS, return as AudioBuffer
+		samples = lookAheadLimiter(samples, window.renderedSampleRate, EXPORT_LIMITER_PARAMS);
+		samples = normalizeLoudness(samples, window.renderedSampleRate, EXPORT_LUFS_TARGET);
+
+		const buffer = new AudioBuffer({ length: samples.length, sampleRate: window.renderedSampleRate });
+		buffer.getChannelData(0).set(samples);
+		return buffer;
+	}
+
+	// Full Web Audio chain (legacy path)
+	const offline = new OfflineAudioContext(
+		1,
+		samples.length,
+		window.renderedSampleRate,
+	);
 	const source = offline.createBufferSource();
-	const input = offline.createBuffer(1, samples.length, window.renderedSampleRate);
+	const input  = offline.createBuffer(
+		1,
+		samples.length,
+		window.renderedSampleRate,
+	);
 	const highpass = offline.createBiquadFilter();
-	const lowpass = offline.createBiquadFilter();
-	const shaper = offline.createWaveShaper();
-	const limiter = offline.createDynamicsCompressor();
-	const gain = offline.createGain();
+	const lowpass  = offline.createBiquadFilter();
+	const shaper   = offline.createWaveShaper();
+	const limiter  = offline.createDynamicsCompressor();
+	const gain     = offline.createGain();
 
 	input.getChannelData(0).set(samples);
-	configureChain({ highpass, lowpass, shaper, limiter, gain }, mode, applyFocus(compression, focus));
+	configureChain(
+		{ highpass, lowpass, shaper, limiter, gain },
+		mode,
+		applyFocus(compression, focus),
+	);
 
 	source.buffer = input;
-	source.connect(highpass).connect(lowpass).connect(shaper).connect(limiter).connect(gain).connect(offline.destination);
+	source
+		.connect(highpass)
+		.connect(lowpass)
+		.connect(shaper)
+		.connect(limiter)
+		.connect(gain)
+		.connect(offline.destination);
 	source.start();
 
 	return offline.startRendering();
 }
 
 export function audioBufferToWavBlob(buffer: AudioBuffer): Blob {
-	const channels = buffer.numberOfChannels;
-	const sampleRate = buffer.sampleRate;
-	const frames = buffer.length;
+	const channels       = buffer.numberOfChannels;
+	const sampleRate     = buffer.sampleRate;
+	const frames         = buffer.length;
 	const bytesPerSample = 2;
-	const blockAlign = channels * bytesPerSample;
-	const dataSize = frames * blockAlign;
-	const arrayBuffer = new ArrayBuffer(44 + dataSize);
-	const view = new DataView(arrayBuffer);
-	let offset = 0;
+	const blockAlign     = channels * bytesPerSample;
+	const dataSize       = frames * blockAlign;
+	const arrayBuffer    = new ArrayBuffer(44 + dataSize);
+	const view           = new DataView(arrayBuffer);
+	let offset           = 0;
 
-	writeString(view, offset, 'RIFF');
+	writeString(view, offset, "RIFF");
 	offset += 4;
 	view.setUint32(offset, 36 + dataSize, true);
 	offset += 4;
-	writeString(view, offset, 'WAVE');
+	writeString(view, offset, "WAVE");
 	offset += 4;
-	writeString(view, offset, 'fmt ');
+	writeString(view, offset, "fmt ");
 	offset += 4;
 	view.setUint32(offset, 16, true);
 	offset += 4;
@@ -141,109 +260,95 @@ export function audioBufferToWavBlob(buffer: AudioBuffer): Blob {
 	offset += 2;
 	view.setUint16(offset, bytesPerSample * 8, true);
 	offset += 2;
-	writeString(view, offset, 'data');
+	writeString(view, offset, "data");
 	offset += 4;
 	view.setUint32(offset, dataSize, true);
 	offset += 4;
 
-	const channelData = Array.from({ length: channels }, (_, channel) => buffer.getChannelData(channel));
-	for (let frame = 0; frame < frames; frame += 1) {
-		for (let channel = 0; channel < channels; channel += 1) {
-			const sample = Math.max(-1, Math.min(1, channelData[channel][frame]));
-			view.setInt16(offset, sample < 0 ? sample * 0x8000 : sample * 0x7fff, true);
+	const channelData = Array.from({ length: channels }, (_, channel) =>
+		buffer.getChannelData(channel),
+	);
+
+	if (channels === 1) {
+		// Mono: use TPDF dither before truncation
+		const dithered = floatToInt16WithDither(channelData[0]);
+		for (let frame = 0; frame < frames; frame += 1) {
+			view.setInt16(offset, dithered[frame], true);
 			offset += 2;
+		}
+	} else {
+		// Multi-channel: frame-interleaved with per-channel TPDF dither
+		const ditheredChannels = channelData.map(c => floatToInt16WithDither(c));
+		for (let frame = 0; frame < frames; frame += 1) {
+			for (let channel = 0; channel < channels; channel += 1) {
+				view.setInt16(offset, ditheredChannels[channel][frame], true);
+				offset += 2;
+			}
 		}
 	}
 
-	return new Blob([arrayBuffer], { type: 'audio/wav' });
+	return new Blob([arrayBuffer], { type: "audio/wav" });
 }
 
-function prepareSamples(input: number[], mode: SoundMode): Float32Array {
-	const output = new Float32Array(input.length);
-	if (input.length === 0) return output;
+// ── Web Audio adapter helpers (depend on browser API) ──
 
-	let sum = 0;
-	for (let i = 0; i < input.length; i += 1) sum += input[i];
-	const mean = sum / input.length;
-	const robustPeak = estimateRobustPeak(input, mean);
-	const gain = (mode === 'raw' ? 0.7 : 0.9) / robustPeak;
-	const fadeSamples = Math.min(Math.floor(input.length * 0.03), 48_000);
-
-	for (let i = 0; i < input.length; i += 1) {
-		const fadeIn = fadeSamples > 0 ? Math.min(1, i / fadeSamples) : 1;
-		const fadeOut = fadeSamples > 0 ? Math.min(1, (input.length - i - 1) / fadeSamples) : 1;
-		output[i] = Math.max(-1, Math.min(1, (input[i] - mean) * gain)) * Math.min(fadeIn, fadeOut);
-	}
-
-	return output;
-}
-
-function estimateRobustPeak(input: number[], mean: number): number {
-	const maxSamples = 100_000;
-	const stride = Math.max(1, Math.floor(input.length / maxSamples));
-	const values = new Array<number>(Math.ceil(input.length / stride));
-	let count = 0;
-	for (let i = 0; i < input.length; i += stride) {
-		values[count] = Math.abs(input[i] - mean);
-		count += 1;
-	}
-	values.length = count;
-	values.sort((a, b) => a - b);
-	return values[Math.floor(values.length * 0.98)] || 1;
-}
-
-function configureChain(
+export function configureChain(
 	nodes: {
-		highpass: BiquadFilterNode;
-		lowpass: BiquadFilterNode;
-		shaper: WaveShaperNode;
-		limiter: DynamicsCompressorNode;
-		gain: GainNode;
+		highpass : BiquadFilterNode;
+		lowpass  : BiquadFilterNode;
+		shaper   : WaveShaperNode;
+		limiter  : DynamicsCompressorNode;
+		gain     : GainNode;
 	},
-	mode: SoundMode,
-	compression: CompressionSettings
+	mode        : SoundMode,
+	compression : CompressionSettings,
 ) {
-	nodes.highpass.type = 'highpass';
-	nodes.highpass.frequency.value = mode === 'raw' ? 8 : 24;
-	nodes.lowpass.type = 'lowpass';
-	nodes.lowpass.frequency.value = mode === 'soft' ? 4200 : mode === 'clear' ? 8000 : mode === 'deep' ? 2600 : mode === 'bright' ? 14000 : 12000;
-	nodes.shaper.curve = makeSaturationCurve(mode === 'soft' ? 1.4 : mode === 'clear' ? 2.2 : mode === 'deep' ? 1.8 : mode === 'bright' ? 2.6 : 1.1);
+	nodes.highpass.type = "highpass";
+	nodes.highpass.frequency.value = mode === "raw" ? 8 : 24;
+	nodes.lowpass.type = "lowpass";
+	nodes.lowpass.frequency.value =
+		mode === "soft"
+			? 4200
+			: mode === "clear"
+				? 8000
+				: mode === "deep"
+					? 2600
+					: mode === "bright"
+						? 14000
+						: 12000;
+	nodes.shaper.curve = makeAsymmetricSaturationCurve({
+		drive: mode === "soft"
+			? 1.4
+			: mode === "clear"
+				? 2.2
+				: mode === "deep"
+					? 1.8
+					: mode === "bright"
+						? 2.6
+						: 1.1,
+		asymmetry: 0.04,
+		wetDryMix: 0.20,
+		outputTrimDb: -1.5,
+	}) as Float32Array<ArrayBuffer>;
 	nodes.limiter.threshold.value = compression.thresholdDb;
-	nodes.limiter.knee.value = 12;
-	nodes.limiter.ratio.value = compression.ratio;
-	nodes.limiter.attack.value = compression.attackMs / 1000;
-	nodes.limiter.release.value = compression.releaseMs / 1000;
-	nodes.gain.gain.value = dbToGain(compression.makeupDb) * (mode === 'soft' ? 0.32 : mode === 'clear' ? 0.42 : mode === 'deep' ? 0.38 : mode === 'bright' ? 0.36 : 0.35);
-}
-
-function applyFocus(compression: CompressionSettings, focus: ListeningFocus): CompressionSettings {
-	if (focus === 'event') return { ...compression, thresholdDb: Math.min(compression.thresholdDb + 4, -4), ratio: Math.max(2, compression.ratio * 0.75) };
-	if (focus === 'texture') return { ...compression, thresholdDb: compression.thresholdDb - 6, ratio: compression.ratio + 2, makeupDb: compression.makeupDb + 2 };
-	if (focus === 'scientific') return { ...compression, thresholdDb: -6, ratio: 2, makeupDb: 0 };
-	return compression;
-}
-
-function measureRms(samples: Float32Array) {
-	if (samples.length === 0) return 0;
-	let sum = 0;
-	for (const sample of samples) sum += sample * sample;
-	return Math.min(1, Math.sqrt(sum / samples.length) * 4);
-}
-
-function dbToGain(db: number) {
-	return 10 ** (db / 20);
-}
-
-function makeSaturationCurve(amount: number) {
-	const samples = 2048;
-	const curve = new Float32Array(samples);
-	for (let i = 0; i < samples; i += 1) {
-		const x = (i * 2) / samples - 1;
-		curve[i] = Math.tanh(x * amount);
-	}
-	return curve;
+	nodes.limiter.knee.value      = 12;
+	nodes.limiter.ratio.value     = compression.ratio;
+	nodes.limiter.attack.value    = compression.attackMs / 1000;
+	nodes.limiter.release.value   = compression.releaseMs / 1000;
+	nodes.gain.gain.value =
+		dbToGain(compression.makeupDb) *
+		(mode === "soft"
+			? 0.32
+			: mode === "clear"
+				? 0.42
+				: mode === "deep"
+					? 0.38
+					: mode === "bright"
+						? 0.36
+						: 0.35);
 }
 
 function writeString(view: DataView, offset: number, value: string) {
-	for (let i = 0; i < value.length; i += 1) view.setUint8(offset + i, value.charCodeAt(i));
+	for (let i = 0; i < value.length; i += 1)
+		view.setUint8(offset + i, value.charCodeAt(i));
 }

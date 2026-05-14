@@ -1,0 +1,61 @@
+# TODO
+
+## ✅ Tier 1 — Hexagonal cleanup
+- Extract DSP from sonifier.ts → domain/sonification.ts
+- Move bridge.ts from data/ → adapters/bridge-client.ts
+- Split types.ts → domain/types.ts (domain), lib/types.ts (cross-boundary DTOs)
+
+## ✅ Tier 2 — Domain value objects + use cases
+- domain/provider-id.ts — ProviderId value object
+- domain/station.ts — StationId + NSLC value objects
+- domain/load-state.ts — LoadState state machine
+- application/seismic-audio-session.ts — SelectProvider, CompareAudioSettings, advanceLoadState
+- composition/main.ts — wired new exports
+- scripts/domain-diag.ts — unit diagnostics
+- Committed: 50a06cb feat(domain): add ProviderId, StationId, NSLC, LoadState value objects
+
+## ✅ Tier 3 — UI alignment
+- Build Provider selector (Local Bridge / Raspberry Shake Archive)
+- Build Loaded Evidence panel (NSLC, range, render, audio state)
+- Wire selectProvider, compareAudioSettings into +page.svelte
+- Wire LoadState machine into +page.svelte loadedState derived
+- Settings comparison warning in evidence panel
+- Committed: 3d209d7 feat(ui): wire Provider selector, LoadState machine, settings comparison
+
+## ✅ Tier 4 — Sound quality (P0 complete)
+- P0 algorithms implemented: polyphase resampler, impulse suppressor, look-ahead limiter, LUFS, TPDF dither
+- Wired into export path: renderProcessedSeismicBuffer with skipWebAudio flag
+- Multi-channel dither fixed (per-channel TPDF, not naive truncation)
+- Full P0 domain chain: prepareSamples → suppressImpulses → lookAheadLimiter → normalizeLoudness
+- export path: renderWavFile first applies P0 domain chain, then optional Web Audio tone shaping
+- 155 diagnostics passing across Batch A–E
+
+## ✅ Tier 5 — P1 algorithms (gallery-quality)
+- Asymmetric saturation (domain/saturation.ts) — wired into sonifier.ts configureChain
+- Relative de-esser (domain/deesser.ts)
+- Three-band compressor (domain/multiband.ts)
+- Dynamic EQ (domain/dynamic-eq.ts)
+- Expander + comfort noise (domain/expander.ts)
+- Mono-safe pseudo-stereo (domain/stereo.ts)
+- xorshift32 PRNG extracted into domain/prng.ts (shared by dither + expander)
+
+## ☐ Tier 5 — Diagnostics upgrade
+- Upgrade browser-smoke.ts: change one audio setting → verify fingerprint changed and audioDetected
+- Add bridge health check: latency, buffer pressure, error rate
+- Structured JSON output from smoke test for CI
+
+## ☐ Tier 6 — Bridge reliability
+- Better error responses in bridge/server.ts (proper HTTP status codes)
+- Timeout handling in raspberryshake.ts requests
+- Retry logic with backoff for archive fetches
+
+## ☐ Tier 7 — Boundary cleanup (nice-to-have)
+- Consider moving sonifier.ts from audio/ → adapters/ (it IS a Web Audio adapter)
+- Fix domain/audio-state.ts dependent on $lib/types (move AudioWindow into domain?)
+- Add station status per-station (not all show 'untested')
+
+## ☐ Tier 8 — UI polish
+- Loading spinner during bridge fetches
+- Show mode glow tuning (orb energy during silence)
+- Responsive fixes for mobile layout (station grid, compressor knobs)
+- Per-station load status in station list (untested / loaded / failed / fallback)

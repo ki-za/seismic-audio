@@ -1,8 +1,13 @@
 <script lang="ts">
-	import { audioBufferToWavBlob, CompressedSeismicPlayer, renderProcessedSeismicBuffer } from '$lib/audio/sonifier';
-	import { buildAudioSettingsSnapshot, buildRequestKey, buildWindowId, fingerprintAudioSettings, isStale, measureAudioSamples } from '$lib/domain/audio-state';
-	import { connectStatus, getAudioWindow, getStatus, isAppError } from '$lib/data/bridge';
+	import { isAppError, buildAudioSettingsSnapshot, buildRequestKey, fingerprintAudioSettings, getAudioPlayer, getBridgeStatus, connectBridgeStatus, loadWindow, playPrepared, prepareSamplesChunked, exportWav, makeExportName, makeExportMetadata, selectProvider, compareAudioSettings, advanceLoadState, raspberryShakeStations, searchStations, toStationChoice } from '$lib/composition/main';
+	import { 
+		DEFAULT_DSP_TUNING,
+		type DspTuningState
+	} from '$lib/application/dsp-tuning';
+	import { initialLoadState, loadStateLabel } from '$lib/domain/load-state';
 	import type { AppError } from '$lib/core/errors';
+	import type { LoadStateSnapshot } from '$lib/domain/load-state';
+	import type { ProviderInfo, SettingsComparison } from '$lib/composition/main';
 	import type { AudioWindow, BridgeStatus, CompressionSettings, ListeningFocus, PlaybackChoice, RenderQuality, SoundMode, StationChoice, WindowChoice } from '$lib/types';
 
 	const windows: WindowChoice[] = [
@@ -31,25 +36,34 @@
 		{ label: 'Texture', value: 'texture' },
 		{ label: 'Scientific-ish', value: 'scientific' }
 	];
-	const stations: StationChoice[] = [
-		{ id: 'local', name: 'Synthetic / LAN bridge', place: 'local bridge feed', channelHint: 'bridge channel', status: 'synthetic' },
-		{ id: 'RD432', name: 'RD432', place: 'Raspberry Shake AM network', channelHint: 'AM.RD432.00.EHZ', status: 'archive' },
-		{ id: 'R5022', name: 'R5022', place: 'Raspberry Shake AM network', channelHint: 'AM.R5022.00.EHZ', status: 'archive' },
-		{ id: 'RCA97', name: 'RCA97', place: 'Raspberry Shake AM network', channelHint: 'AM.RCA97.00.EHZ', status: 'archive' },
-		{ id: 'R83E1', name: 'R83E1', place: 'Raspberry Shake AM network', channelHint: 'AM.R83E1.00.EHZ', status: 'archive' },
-		{ id: 'R5156', name: 'R5156', place: 'Raspberry Shake AM network', channelHint: 'AM.R5156.00.EHZ', status: 'archive' }
-	];
+	const localStation: StationChoice = { id: 'local', name: 'Synthetic / LAN bridge', place: 'local bridge feed', channelHint: 'bridge channel', status: 'synthetic' };
+	const favouriteStationMetadata = [
+		{ id: 'S99EB', place: 'Mexico' },
+		{ id: 'R9B86', place: 'Canada' },
+		{ id: 'S2C02', place: 'South Africa' },
+		{ id: 'R135F', place: 'Iceland' },
+		{ id: 'R4C3D', place: 'China' }
+	] as const;
+	const favouriteStationIds: string[] = favouriteStationMetadata.map((station) => station.id);
+	const favouriteStations = raspberryShakeStations
+		.filter((station) => favouriteStationIds.includes(station.code))
+		.map(toStationChoice);
+	const archiveStationsById = new Map(raspberryShakeStations.map((station) => [station.code, toStationChoice(station)]));
 
 	let status = $state<BridgeStatus | null>(null);
 	let connection = $state('connecting');
 	let selectedWindowSeconds = $state(windows[1].seconds);
 	let selectedPlaybackSeconds = $state(playbacks[2].seconds);
-	let selectedStationId = $state(stations[0].id);
+	let selectedStationId = $state(localStation.id);
+	let stationSearch = $state('');
 	let soundMode = $state<SoundMode>('soft');
 	let renderQuality = $state<RenderQuality>('balanced');
 	let listeningFocus = $state<ListeningFocus>('gentle');
 	let compression = $state<CompressionSettings>({ thresholdDb: -18, ratio: 4, attackMs: 5, releaseMs: 90, makeupDb: 3 });
 	let isPlaying = $state(false);
+	type PlayPhase = 'idle' | 'loading' | 'rendering' | 'starting' | 'playing';
+	let playPhase = $state<PlayPhase>('idle');
+	let dspProgress = $state(0);
 	let isLoading = $state(false);
 	let showMode = $state(false);
 	let error = $state<AppError | null>(null);
@@ -58,42 +72,66 @@
 	let loadedRequestKey = $state<string | null>(null);
 	let loadedWindowId = $state<string | null>(null);
 	let loadedFingerprint = $state<string | null>(null);
+	let loadedSettingsSnapshot = $state<ReturnType<typeof buildAudioSettingsSnapshot> | null>(null);
 	let activeFingerprint = $state<string | null>(null);
 	let isExporting = $state(false);
+	let loadState = $state<LoadStateSnapshot>(initialLoadState());
+	let dspTuning = $state<DspTuningState>(structuredClone(DEFAULT_DSP_TUNING));
+	let dspSectionOpen = $state(false);
 
-	const player = new CompressedSeismicPlayer();
+	const player = getAudioPlayer();
 	player.setLevelCallback((level) => (audioLevel = level));
 
 	const selectedWindow = $derived(windows.find((choice) => choice.seconds === selectedWindowSeconds) ?? windows[0]);
 	const selectedPlayback = $derived(playbacks.find((choice) => choice.seconds === selectedPlaybackSeconds) ?? playbacks[0]);
-	const selectedStation = $derived(stations.find((station) => station.id === selectedStationId) ?? stations[0]);
+	const visibleArchiveStations = $derived(searchStations(raspberryShakeStations, stationSearch, favouriteStationIds, 30).map(toStationChoice));
+	const selectedStation = $derived(selectedStationId === localStation.id ? localStation : archiveStationsById.get(selectedStationId) ?? favouriteStations[0] ?? localStation);
 	const compressionText = $derived(`${selectedWindow.label} → ${selectedPlayback.label}`);
 	const availabilityText = $derived(selectedStation.id === 'local' ? (status ? formatDuration(status.secondsStored) : 'no data yet') : 'archive request uses now - 35 min');
 	const bridgeText = $derived(status ? `${status.samplesStored.toLocaleString()} local samples · ${status.channels.join(', ') || 'no local channel yet'}` : 'waiting for bridge');
-	const activeChannel = $derived(selectedStation.id === 'local' ? (status?.channels[0] ?? selectedStation.channelHint) : selectedStation.channelHint);
+	const activeChannel = $derived(selectedStation.id === 'local' ? (status?.channels[0] ?? selectedStation.channelHint) : selectedStation.channelHint.split('.').pop() ?? selectedStation.channelHint);
 	const selectedQuality = $derived(renderQualities.find((choice) => choice.value === renderQuality) ?? renderQualities[1]);
 	const selectedRequestKey = $derived(buildRequestKey({ provider: selectedStation.id === 'local' ? 'bridge' : 'raspberryshake', stationId: selectedStation.id, channel: selectedStation.id === 'local' ? status?.channels[0] : undefined, windowSeconds: selectedWindowSeconds, playbackSeconds: selectedPlaybackSeconds, renderQuality }));
 	const selectedFingerprint = $derived(fingerprintAudioSettings(buildAudioSettingsSnapshot({ soundMode, listeningFocus, compression, renderQuality, playbackSeconds: selectedPlaybackSeconds, renderedSampleRate: lastAudioWindow?.renderedSampleRate ?? 0 })));
-	const loadedState = $derived(isLoading ? 'loading' : !lastAudioWindow ? 'untested' : isStale(selectedRequestKey, loadedRequestKey) ? 'stale' : lastAudioWindow.metadata?.requestedChannel && lastAudioWindow.metadata.requestedChannel !== lastAudioWindow.channel ? 'fallback' : 'loaded');
+	const loadedStateDerived = $derived(loadStateLabel(loadState.state));
+	const loadedState = $derived(isLoading ? 'loading' : loadState.state);
 	const soundState = $derived(!loadedFingerprint ? 'not loaded' : selectedFingerprint !== loadedFingerprint ? 'changed · replay to hear' : activeFingerprint === loadedFingerprint && isPlaying ? 'playing · applied' : 'loaded · ready');
+	const providerInfo = $derived(selectProvider(selectedStationId));
+	const settingsComparison: SettingsComparison = $derived(
+		compareAudioSettings(
+			buildAudioSettingsSnapshot({ soundMode, listeningFocus, compression, renderQuality, playbackSeconds: selectedPlaybackSeconds, renderedSampleRate: lastAudioWindow?.renderedSampleRate ?? 0 }),
+			loadedSettingsSnapshot
+		)
+	);
 
 	$effect(() => {
-		getStatus().then((next) => (status = next)).catch(() => (connection = 'offline'));
-		return connectStatus((next) => (status = next), (next) => (connection = next));
+		getBridgeStatus().then((next) => (status = next)).catch(() => (connection = 'offline'));
+		return connectBridgeStatus((next) => (status = next), (next) => (connection = next));
 	});
 
-	async function loadWindow() {
+	async function loadWindowAction() {
 		error = null;
 		isLoading = true;
+		loadState = { state: 'loading' };
 		try {
-			const requestKey = selectedRequestKey;
-			const audioWindow = await getAudioWindow(makeAudioRequest());
-			audioWindow.metrics ??= measureAudioSamples(audioWindow.samples, audioWindow.renderedSampleRate);
-			lastAudioWindow = audioWindow;
-			loadedRequestKey = requestKey;
-			loadedWindowId = buildWindowId(audioWindow, requestKey);
-			loadedFingerprint = selectedFingerprint;
+			const loaded = await loadWindow(selectedRequestKey, makeAudioRequest(), {
+				soundMode, listeningFocus, compression, renderQuality, playbackSeconds: selectedPlaybackSeconds
+			});
+			lastAudioWindow = loaded.window;
+			loadedRequestKey = loaded.requestKey;
+			loadedWindowId = loaded.windowId;
+			loadedFingerprint = loaded.settingsFingerprint;
+			loadedSettingsSnapshot = loaded.settingsSnapshot;
+			loadState = advanceLoadState(loadState, {
+				ok: true,
+				requestedChannel: activeChannel,
+				actualChannel: loaded.window.channel
+			});
 		} catch (caught) {
+			loadState = advanceLoadState(loadState, {
+				ok: false,
+				error: caught instanceof Error ? caught.message : String(caught)
+			});
 			error = isAppError(caught)
 				? caught
 				: {
@@ -110,14 +148,36 @@
 
 	async function playLoaded() {
 		error = null;
-		if (!lastAudioWindow || loadedState === 'stale') await loadWindow();
-		if (!lastAudioWindow) return;
-		isPlaying = true;
+		// Phase 0: load window if stale or not yet loaded
+		if (!lastAudioWindow || loadState.state === 'stale') {
+			playPhase = 'loading';
+			await loadWindowAction();
+		}
+		if (!lastAudioWindow) {
+			playPhase = 'idle';
+			return;
+		}
 		try {
-			await player.play(lastAudioWindow, soundMode, compression, listeningFocus);
+			// Phase 1: prepare samples in chunks with progress feedback
+			playPhase = 'rendering';
+			const samples = await prepareSamplesChunked(
+				lastAudioWindow.samples,
+				soundMode,
+				(pct) => { dspProgress = Math.round(pct * 100); },
+				lastAudioWindow.renderedSampleRate,
+				dspTuning,
+			);
+			// Phase 2: start Web Audio (creates/resumes AudioContext, wires nodes)
+			playPhase = 'starting';
+			await playPrepared(samples, lastAudioWindow.renderedSampleRate, soundMode, compression, listeningFocus);
+			// Phase 3: playing
+			playPhase = 'playing';
+			isPlaying = true;
 			loadedFingerprint = selectedFingerprint;
 			activeFingerprint = selectedFingerprint;
+			dspProgress = 0;
 		} catch (caught) {
+			playPhase = 'idle';
 			isPlaying = false;
 			error = isAppError(caught)
 				? caught
@@ -135,13 +195,41 @@
 		error = null;
 		isExporting = true;
 		try {
-			const audioWindow =
-				lastAudioWindow ??
-				(await getAudioWindow(makeAudioRequest()));
+			const audioWindow = lastAudioWindow ?? (await loadWindow(selectedRequestKey, makeAudioRequest(), {
+				soundMode, listeningFocus, compression, renderQuality, playbackSeconds: selectedPlaybackSeconds
+			})).window;
 			lastAudioWindow = audioWindow;
-			const buffer = await renderProcessedSeismicBuffer(audioWindow, soundMode, compression, listeningFocus);
-			downloadBlob(audioBufferToWavBlob(buffer), makeExportName(audioWindow, 'wav'));
-			downloadBlob(makeMetadataBlob(audioWindow), makeExportName(audioWindow, 'json'));
+			await exportWav({
+				window: audioWindow,
+				soundMode,
+				compression,
+				listeningFocus,
+				wavFilename: makeExportName({
+					stationId: selectedStation.id,
+					channel: audioWindow.channel,
+					windowSeconds: audioWindow.windowSeconds,
+					playbackSeconds: audioWindow.playbackSeconds,
+					soundMode,
+					renderQuality
+				}, 'wav'),
+				metadataFilename: makeExportName({
+					stationId: selectedStation.id,
+					channel: audioWindow.channel,
+					windowSeconds: audioWindow.windowSeconds,
+					playbackSeconds: audioWindow.playbackSeconds,
+					soundMode,
+					renderQuality
+				}, 'json'),
+				metadata: makeExportMetadata({
+					window: audioWindow,
+					soundMode,
+					renderQuality,
+					listeningFocus,
+					compression,
+					windowId: loadedWindowId ?? '',
+					settingsFingerprint: selectedFingerprint
+				})
+			});
 		} catch (caught) {
 			error = {
 				code: 'AUDIO_EXPORT_FAILED',
@@ -169,6 +257,7 @@
 	function stop() {
 		player.stop();
 		isPlaying = false;
+		playPhase = 'idle';
 		activeFingerprint = null;
 	}
 
@@ -188,53 +277,6 @@
 		return `${(seconds / 3600).toFixed(1)} hr`;
 	}
 
-	function downloadBlob(blob: Blob, filename: string) {
-		const url = URL.createObjectURL(blob);
-		const anchor = document.createElement('a');
-		anchor.href = url;
-		anchor.download = filename;
-		anchor.click();
-		URL.revokeObjectURL(url);
-	}
-
-	function makeExportName(window: AudioWindow, extension: 'wav' | 'json') {
-		const channel = window.channel.replace(/[^a-z0-9_-]/gi, '-');
-		const station = window.station ?? selectedStation.id;
-		return `seismic-${station}-${channel}-${window.windowSeconds}s-to-${window.playbackSeconds}s-${soundMode}-${renderQuality}.${extension}`;
-	}
-
-	function makeMetadataBlob(window: AudioWindow) {
-		return new Blob([
-			JSON.stringify(
-				{
-					source: window.source ?? 'bridge',
-					network: window.network,
-					station: window.station,
-					location: window.location,
-					channel: window.channel,
-					startISO: window.startISO,
-					endISO: window.endISO,
-					windowSeconds: window.windowSeconds,
-					playbackSeconds: window.playbackSeconds,
-					availableSeconds: window.availableSeconds,
-					sourceSampleRate: window.sourceSampleRate,
-					renderedSampleRate: window.renderedSampleRate,
-					soundMode,
-					renderQuality,
-					listeningFocus,
-					compression,
-					loadedWindowId,
-					audioSettingsFingerprint: selectedFingerprint,
-					renderMetrics: window.metrics ?? measureAudioSamples(window.samples, window.renderedSampleRate),
-					loadMetadata: window.metadata,
-					processing: ['linear resample to playback duration', 'mean removal', '98th-percentile normalization', 'edge fade', 'high-pass', 'low-pass', 'tanh saturation', 'dynamics compression', 'gain'],
-					exportedAtISO: new Date().toISOString()
-				},
-				null,
-				2
-			)
-		], { type: 'application/json' });
-	}
 </script>
 
 <svelte:document onfullscreenchange={() => (showMode = Boolean(document.fullscreenElement))} />
@@ -260,28 +302,67 @@
 
 		<div class="dashboard-grid">
 			<div class="group wide">
+				<p>Provider <small>{providerInfo.label}</small></p>
+				<div class="buttons">
+					<button class={providerInfo.id === 'bridge' ? 'selected' : ''} onclick={() => (selectedStationId = localStation.id)}>󰓅 Bridge</button>
+					<button class={providerInfo.id === 'raspberryshake' ? 'selected' : ''} onclick={() => (selectedStationId = favouriteStations[0]?.id ?? 'RD432')}>󰀂 Archive</button>
+				</div>
+				<p class="readout">{providerInfo.isArchive ? 'Archive uses data.raspberryshake.org, -35 min delay' : 'Local bridge buffer, rolling window'}</p>
+			</div>
+
+			<div class="group wide">
 				<p>Station / location <small>selected ≠ loaded</small></p>
+				<div class="station-search">
+					<label>
+						<span>Search by station code or place</span>
+						<input bind:value={stationSearch} placeholder="R0066, California, Jamaica…" autocomplete="off" />
+					</label>
+				</div>
 				<div class="station-list">
-					{#each stations as station (station.id)}
-						<button class={station.id === selectedStationId ? 'selected' : ''} onclick={() => (selectedStationId = station.id)}>
-							<strong>{station.name}</strong>
-							<span>{station.place} · {station.id === selectedStationId ? loadedState : 'untested'}</span>
-						</button>
-					{/each}
+					<button class={localStation.id === selectedStationId ? 'selected' : ''} onclick={() => (selectedStationId = localStation.id)}>
+						<strong>{localStation.name}</strong>
+						<span>{localStation.place} · {localStation.id === selectedStationId ? loadedState : 'untested'}</span>
+					</button>
+					{#if !stationSearch.trim()}
+						{#each favouriteStations as station (station.id)}
+							<button class={station.id === selectedStationId ? 'selected' : ''} onclick={() => (selectedStationId = station.id)}>
+								<strong>★ {station.name}</strong>
+								<span>{station.place} · {station.id === selectedStationId ? loadedState : 'untested'}</span>
+							</button>
+						{/each}
+					{:else}
+						{#each visibleArchiveStations as station (station.id)}
+							<button class={station.id === selectedStationId ? 'selected' : ''} onclick={() => (selectedStationId = station.id)}>
+								<strong>{station.name}</strong>
+								<span>{station.place} · {station.id === selectedStationId ? loadedState : 'untested'}</span>
+							</button>
+						{/each}
+					{/if}
 				</div>
 				<p class="readout">Selected channel target: {activeChannel}</p>
 			</div>
 
 			<div class="group wide evidence" data-testid="loaded-evidence" data-state={loadedState} data-fingerprint={selectedFingerprint} data-active-fingerprint={activeFingerprint ?? ''}>
-				<p>Loaded evidence <small>{loadedState}</small></p>
+				<p>Loaded evidence <small>{loadedStateDerived}</small></p>
 				{#if lastAudioWindow}
-					<p class="readout">Source: {lastAudioWindow.source ?? 'bridge'} · {lastAudioWindow.metadata?.requestHost ?? 'local bridge'}</p>
-					<p class="readout">Target: {lastAudioWindow.network ?? 'local'}.{lastAudioWindow.station ?? selectedStation.id}.{lastAudioWindow.location ?? '--'}.{lastAudioWindow.metadata?.requestedChannel ?? activeChannel}</p>
-					<p class="readout">Actual: {lastAudioWindow.network ?? 'local'}.{lastAudioWindow.station ?? selectedStation.id}.{lastAudioWindow.location ?? '--'}.{lastAudioWindow.channel}</p>
+					<p class="readout">Provider: {providerInfo.label}</p>
+					<p class="readout">NSLC: {lastAudioWindow.network ?? '--'}.{lastAudioWindow.station ?? selectedStation.id}.{lastAudioWindow.location ?? '--'}.{lastAudioWindow.channel}</p>
+					{#if lastAudioWindow.metadata?.requestedChannel && lastAudioWindow.metadata.requestedChannel !== lastAudioWindow.channel}
+						<p class="readout">Fallback: requested {lastAudioWindow.metadata.requestedChannel}, got {lastAudioWindow.channel}</p>
+					{/if}
 					<p class="readout">Range: {lastAudioWindow.startISO ?? 'rolling buffer'} → {lastAudioWindow.endISO ?? 'now'}</p>
-					<p class="readout">Render: {lastAudioWindow.renderedSampleRate.toLocaleString()} Hz · {lastAudioWindow.samples.length.toLocaleString()} samples</p>
-					<p class="readout">Metrics: RMS {lastAudioWindow.metrics?.rms.toFixed(4)} · Peak {lastAudioWindow.metrics?.peak.toFixed(4)}</p>
-					<p class="readout">Sound: {soundMode} · {listeningFocus} · {selectedFingerprint} · {soundState}</p>
+					<p class="readout">Render: {lastAudioWindow.renderedSampleRate.toLocaleString()} Hz · {lastAudioWindow.samples.length.toLocaleString()} samples · {(lastAudioWindow.samples.length / lastAudioWindow.renderedSampleRate).toFixed(1)}s</p>
+					<p class="readout">Metrics: RMS {lastAudioWindow.metrics?.rms.toFixed(4)} · Peak {lastAudioWindow.metrics?.peak.toFixed(4)} · ZCR {lastAudioWindow.metrics?.zeroCrossingRate?.toFixed(4) ?? '—'}</p>
+					<p class="readout">Sound: {soundMode} · {listeningFocus} · sig {selectedFingerprint} · {soundState}</p>
+					{#if settingsComparison.anyChanged}
+						<p class="readout warn">⚡ Settings changed: {settingsComparison.changedLabels.join(', ')} — replay to apply</p>
+					{/if}
+					{#if loadState.state === 'fallback'}
+						<p class="readout warn">⚠ Loaded via fallback channel</p>
+					{/if}
+					{#if loadState.error}
+						<p class="readout error">⛔ {loadState.error}</p>
+					{/if}
 					{#if lastAudioWindow.metadata?.attemptedChannels?.length}
 						<p class="readout">Tried: {lastAudioWindow.metadata.attemptedChannels.map((attempt) => `${attempt.channel}:${attempt.status}`).join(', ')}</p>
 					{/if}
@@ -348,15 +429,76 @@
 					<label>Makeup <input type="range" min="0" max="12" bind:value={compression.makeupDb} /> <span>+{compression.makeupDb} dB</span></label>
 				</div>
 			</div>
+
+				<div class="group wide dsp-section">
+				<div class="dsp-header-row">
+					<button class="dsp-toggle" onclick={() => (dspSectionOpen = !dspSectionOpen)}>
+						<span class="dsp-arrow">{dspSectionOpen ? '▾' : '▸'}</span>
+						DSP Tuning
+						<small>
+							{dspTuning.impulse.enabled ? 'impulse ' : ''}
+							{dspTuning.saturation.enabled ? 'saturation ' : ''}
+							{dspTuning.expander.enabled ? 'expander' : ''}
+							{!dspTuning.impulse.enabled && !dspTuning.saturation.enabled && !dspTuning.expander.enabled ? 'all off' : ''}
+						</small>
+					</button>
+					<a class="dsp-docs-link" href="/dsp-guide" title="DSP tuning guide">󰈙</a>
+				</div>
+				{#if dspSectionOpen}
+					<div class="dsp-controls">
+						<div class="dsp-stage">
+							<label class="dsp-stage-header">
+								<input type="checkbox" bind:checked={dspTuning.impulse.enabled} />
+								Impulse suppression <small>Hampel / median click repair</small>
+							</label>
+							<div class="knobs">
+								<label>Radius <input type="range" min="1" max="8" bind:value={dspTuning.impulse.radius} /> <span>{dspTuning.impulse.radius}</span></label>
+								<label>Threshold <input type="range" min="4" max="14" step="0.5" bind:value={dspTuning.impulse.thresholdMAD} /> <span>{dspTuning.impulse.thresholdMAD} MAD</span></label>
+								<label>Blend <input type="range" min="0" max="1" step="0.05" bind:value={dspTuning.impulse.blend} /> <span>{dspTuning.impulse.blend.toFixed(2)}</span></label>
+							</div>
+						</div>
+						<div class="dsp-stage">
+							<label class="dsp-stage-header">
+								<input type="checkbox" bind:checked={dspTuning.saturation.enabled} />
+								Asymmetric saturation <small>P1 — harmonic warmth</small>
+							</label>
+							<div class="knobs">
+								<label>Drive <input type="range" min="1" max="4" step="0.1" bind:value={dspTuning.saturation.drive} /> <span>{dspTuning.saturation.drive.toFixed(1)}</span></label>
+								<label>Knee <input type="range" min="0.4" max="0.98" step="0.02" bind:value={dspTuning.saturation.knee} /> <span>{dspTuning.saturation.knee.toFixed(2)}</span></label>
+								<label>Asymmetry <input type="range" min="0" max="0.25" step="0.01" bind:value={dspTuning.saturation.asymmetry} /> <span>{dspTuning.saturation.asymmetry.toFixed(2)}</span></label>
+								<label>Wet/dry <input type="range" min="0" max="0.5" step="0.05" bind:value={dspTuning.saturation.wetDryMix} /> <span>{dspTuning.saturation.wetDryMix.toFixed(2)}</span></label>
+								<label>Trim <input type="range" min="-6" max="0" step="0.5" bind:value={dspTuning.saturation.outputTrimDb} /> <span>{dspTuning.saturation.outputTrimDb.toFixed(1)} dB</span></label>
+							</div>
+						</div>
+						<div class="dsp-stage">
+							<label class="dsp-stage-header">
+								<input type="checkbox" bind:checked={dspTuning.expander.enabled} />
+								Downward expander <small>P1 — noise gate with comfort noise</small>
+							</label>
+							<div class="knobs">
+								<label>Threshold <input type="range" min="-70" max="-30" bind:value={dspTuning.expander.thresholdDb} /> <span>{dspTuning.expander.thresholdDb} dB</span></label>
+								<label>Ratio <input type="range" min="1.2" max="3" step="0.1" bind:value={dspTuning.expander.ratio} /> <span>{dspTuning.expander.ratio.toFixed(1)}:1</span></label>
+								<label>Depth <input type="range" min="4" max="20" bind:value={dspTuning.expander.maxDepthDb} /> <span>{dspTuning.expander.maxDepthDb} dB</span></label>
+								<label>Attack <input type="range" min="5" max="60" bind:value={dspTuning.expander.attackMs} /> <span>{dspTuning.expander.attackMs} ms</span></label>
+								<label>Release <input type="range" min="100" max="1000" bind:value={dspTuning.expander.releaseMs} /> <span>{dspTuning.expander.releaseMs} ms</span></label>
+							</div>
+						</div>
+					</div>
+				{/if}
+			</div>
 		</div>
 
 		<div class="actions">
-			<button data-testid="load-window" onclick={loadWindow} disabled={isLoading}>{isLoading ? 'Loading…' : 'Load Window'}</button>
-			<button class="primary" data-testid="begin-listening" onclick={playLoaded}>{isPlaying ? 'Restart Loaded Loop' : 'Play Loaded Loop'}</button>
+			<button data-testid="load-window" onclick={loadWindowAction} disabled={isLoading}>{isLoading ? 'Loading…' : 'Load Window'}</button>
+			<button class="primary" data-testid="begin-listening" onclick={playLoaded} disabled={playPhase === 'loading' || playPhase === 'rendering' || playPhase === 'starting'}>
+				{playPhase === 'loading' ? 'Loading window…' : playPhase === 'rendering' ? `Processing samples… ${dspProgress}%` : playPhase === 'starting' ? 'Starting audio…' : isPlaying ? 'Restart Loaded Loop' : 'Play Loaded Loop'}
+			</button>
 			<button onclick={stop}>Stop</button>
 			<button onclick={downloadWav} disabled={isExporting || !lastAudioWindow}>{isExporting ? 'Rendering WAV…' : 'Download WAV + metadata'}</button>
 			<button onclick={showMode ? exitShowMode : enterShowMode}>{showMode ? 'Exit show mode' : 'Fullscreen show mode'}</button>
 		</div>
+
+		<button class="dsp-reset" onclick={() => { dspTuning = structuredClone(DEFAULT_DSP_TUNING); }}>Reset DSP to defaults</button>
 
 		{#if error}
 			<div class="error" data-testid="error-message">

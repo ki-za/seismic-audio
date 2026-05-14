@@ -1,0 +1,87 @@
+{
+  "tools": [
+    {
+      "name": "bun",
+      "command": "bun",
+      "label": "bun",
+      "description": "Run TypeScript/JavaScript with Bun, manage packages, and run project scripts.",
+      "promptSnippet": "Run TypeScript or JavaScript, install packages, or execute package.json scripts with Bun.",
+      "promptGuidelines": [
+        "Use 'bun run <script>' for package.json scripts (dev, build, bridge, diagnose, etc).",
+        "Use 'bun install' to add packages — do not use npm.",
+        "Use 'bun <file>.ts' to run TypeScript files directly without compilation.",
+        "Prefer bun over node/npm for all JS/TS operations in this project."
+      ]
+    },
+    {
+      "name": "rg",
+      "command": "rg",
+      "label": "rg",
+      "description": "Search file contents with ripgrep — fast regex search.",
+      "promptSnippet": "Search file contents with ripgrep using explicit argv arguments.",
+      "promptGuidelines": [
+        "Pass search pattern and flags as separate argv items, e.g. [\"-n\", \"pattern\", \"path\"].",
+        "Use --glob for file filtering instead of shell globs.",
+        "Use this tool instead of bash for code search and grep tasks."
+      ]
+    },
+    {
+      "name": "fd",
+      "command": "fd",
+      "label": "fd",
+      "description": "Find files and directories by name or pattern.",
+      "promptSnippet": "Find files and directories by name or pattern.",
+      "promptGuidelines": [
+        "Pass pattern and path as separate argv items.",
+        "Use -e for extension filtering, -t for type filtering.",
+        "Use this tool instead of bash find for file discovery."
+      ]
+    },
+    {
+      "name": "jq",
+      "command": "jq",
+      "label": "jq",
+      "description": "Query and transform JSON with jq.",
+      "promptSnippet": "Query and transform JSON data with jq filters.",
+      "promptGuidelines": [
+        "Pass the jq filter and flags as separate argv items.",
+        "Use this tool instead of bash for JSON processing."
+      ]
+    },
+    {
+      "name": "bat",
+      "command": "bat",
+      "label": "bat",
+      "description": "Display file contents with syntax highlighting.",
+      "promptSnippet": "Display file contents with syntax highlighting via bat.",
+      "promptGuidelines": [
+        "Use --style=plain for scripts and piping.",
+        "Use --line-range for viewing specific sections.",
+        "Use --language to force syntax highlighting for a specific language."
+      ]
+    },
+    {
+      "name": "tree",
+      "command": "tree",
+      "label": "tree",
+      "description": "Show a directory tree.",
+      "promptSnippet": "Show a directory tree with tree.",
+      "promptGuidelines": [
+        "Use -L to limit depth.",
+        "Use -I to ignore patterns."
+      ]
+    },
+    {
+      "name": "eza",
+      "command": "eza",
+      "label": "eza",
+      "description": "List directory contents with colors and icons.",
+      "promptSnippet": "List directory contents with eza (modern ls).",
+      "promptGuidelines": [
+        "Use -la for detailed list with hidden files.",
+        "Use -T for tree view.",
+        "Use --sort=modified to list by modification time."
+      ]
+    }
+  ]
+}
