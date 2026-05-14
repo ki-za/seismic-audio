@@ -2,7 +2,7 @@
 // Tests TPDF dither for 16-bit PCM export.
 // Run: bun scripts/diag-batch-c.ts
 
-import { applyTPDFDither, floatToInt16WithDither, setDitherSeed } from "../src/lib/domain/dither";
+import { applyTPDFDither, floatToInt16WithDither, setDitherSeed } from "../../src/lib/domain/dither";
 
 let pass = 0;
 let fail = 0;

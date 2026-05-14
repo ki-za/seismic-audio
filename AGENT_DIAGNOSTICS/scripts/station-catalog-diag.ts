@@ -1,5 +1,5 @@
-import { raspberryShakeStations } from "../src/lib/adapters/raspberry-shake-station-catalog";
-import { searchStations, toStationChoice } from "../src/lib/domain/station-catalog";
+import { raspberryShakeStations } from "../../src/lib/adapters/raspberry-shake-station-catalog";
+import { searchStations, toStationChoice } from "../../src/lib/domain/station-catalog";
 
 const favouriteMetadata = [
 	{ id: "S99EB", place: "Mexico" },

@@ -1,33 +1,33 @@
 // ── Tier 2–3 Domain Diagnostics ──
 // Pure unit-level checks for value objects, state machine, use cases.
-// Run: bun run scripts/domain-diag.ts
+// Run: bun run AGENT_DIAGNOSTICS/scripts/domain-diag.ts
 
 import {
 	providerFromStationId,
 	providerLabel,
 	isArchiveProvider,
 	type ProviderId,
-} from "../src/lib/domain/provider-id";
+} from "../../src/lib/domain/provider-id";
 import {
 	nslcForStation,
 	nslcToChannelHint,
 	parseChannelHint,
 	channelHintForStation,
 	type NSLC,
-} from "../src/lib/domain/station";
+} from "../../src/lib/domain/station";
 import {
 	transitionLoadState,
 	initialLoadState,
 	loadStateLabel,
 	type LoadStateSnapshot,
-} from "../src/lib/domain/load-state";
+} from "../../src/lib/domain/load-state";
 import {
 	selectProvider,
 	compareAudioSettings,
 	advanceLoadState,
 	getStationNSLC,
-} from "../src/lib/application/seismic-audio-session";
-import type { AudioSettingsSnapshot } from "../src/lib/domain/types";
+} from "../../src/lib/application/seismic-audio-session";
+import type { AudioSettingsSnapshot } from "../../src/lib/domain/types";
 
 let failures = 0;
 function assert(label: string, condition: boolean, detail?: string) {

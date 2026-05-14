@@ -1,4 +1,4 @@
-import { MAX_PLAYBACK_SECONDS, MAX_WINDOW_SECONDS, clampQuerySeconds, formatQueryDuration, isoFromDateTimeLocal, queryRangeSummary } from "../src/lib/domain/query-range";
+import { MAX_PLAYBACK_SECONDS, MAX_WINDOW_SECONDS, clampQuerySeconds, formatQueryDuration, isoFromDateTimeLocal, queryRangeSummary } from "../../src/lib/domain/query-range";
 
 const startISO = isoFromDateTimeLocal("2026-05-14", "09:00");
 const requested = clampQuerySeconds({

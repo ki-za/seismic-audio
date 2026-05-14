@@ -3,8 +3,8 @@
 //
 // Usage: bun scripts/diag-batch-h.ts
 
-import { threeBandCompressor, compressSingleBand, DEFAULT_MULTIBAND } from "../src/lib/domain/multiband";
-import type { BandCompressorParams, MultibandParams } from "../src/lib/domain/types";
+import { threeBandCompressor, compressSingleBand, DEFAULT_MULTIBAND } from "../../src/lib/domain/multiband";
+import type { BandCompressorParams, MultibandParams } from "../../src/lib/domain/types";
 
 let passed = 0;
 let failed = 0;

@@ -3,7 +3,7 @@
 //
 // Usage: bun scripts/diag-batch-k.ts
 
-import { monoSafePseudoStereo, DEFAULT_PSEUDO_STEREO } from "../src/lib/domain/stereo";
+import { monoSafePseudoStereo, DEFAULT_PSEUDO_STEREO } from "../../src/lib/domain/stereo";
 
 let passed = 0;
 let failed = 0;

@@ -7,8 +7,8 @@
 //
 // Run: bun scripts/diag-batch-e.ts
 
-import { renderCoreExport } from "../src/lib/application/render-core-export";
-import { floatToInt16WithDither } from "../src/lib/domain/dither";
+import { renderCoreExport } from "../../src/lib/application/render-core-export";
+import { floatToInt16WithDither } from "../../src/lib/domain/dither";
 
 let pass = 0;
 let fail = 0;

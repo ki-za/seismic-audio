@@ -6,15 +6,15 @@
 //
 // Usage: bun scripts/diag-batch-l.ts
 
-import { relativeDeEsser } from "../src/lib/domain/deesser";
-import { dynamicResonanceCut } from "../src/lib/domain/dynamic-eq";
-import { threeBandCompressor } from "../src/lib/domain/multiband";
-import { asymmetricSaturation } from "../src/lib/domain/saturation";
-import { expanderWithComfortNoise } from "../src/lib/domain/expander";
-import { lookAheadLimiter } from "../src/lib/domain/limiter";
-import { normalizeLoudness } from "../src/lib/domain/loudness";
-import { monoSafePseudoStereo } from "../src/lib/domain/stereo";
-import { floatToInt16WithDither } from "../src/lib/domain/dither";
+import { relativeDeEsser } from "../../src/lib/domain/deesser";
+import { dynamicResonanceCut } from "../../src/lib/domain/dynamic-eq";
+import { threeBandCompressor } from "../../src/lib/domain/multiband";
+import { asymmetricSaturation } from "../../src/lib/domain/saturation";
+import { expanderWithComfortNoise } from "../../src/lib/domain/expander";
+import { lookAheadLimiter } from "../../src/lib/domain/limiter";
+import { normalizeLoudness } from "../../src/lib/domain/loudness";
+import { monoSafePseudoStereo } from "../../src/lib/domain/stereo";
+import { floatToInt16WithDither } from "../../src/lib/domain/dither";
 import type {
 	DeEsserParams,
 	DynamicEqParams,
@@ -23,7 +23,7 @@ import type {
 	ExpanderParams,
 	LimiterParams,
 	PseudoStereoParams,
-} from "../src/lib/domain/types";
+} from "../../src/lib/domain/types";
 
 let passed = 0;
 let failed = 0;

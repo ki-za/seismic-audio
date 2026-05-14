@@ -7,8 +7,8 @@ import {
 	asymmetricSaturation,
 	makeAsymmetricSaturationCurve,
 	DEFAULT_SATURATION,
-} from "../src/lib/domain/saturation";
-import { dbToLinear } from "../src/lib/domain/dsp";
+} from "../../src/lib/domain/saturation";
+import { dbToLinear } from "../../src/lib/domain/dsp";
 
 let passed = 0;
 let failed = 0;

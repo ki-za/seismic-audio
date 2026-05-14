@@ -1,6 +1,6 @@
 // ── Batch A Diagnostics ──
 // Tests shared DSP helpers + polyphase resampler.
-// Run: bun scripts/domain-diag.ts
+// Run: bun AGENT_DIAGNOSTICS/scripts/domain-diag.ts
 // Alternatively: npx tsx scripts/domain-diag.ts
 
 import {
@@ -8,16 +8,16 @@ import {
 	smoothingCoefficient, smoothEnvelope,
 	lerp, mix, median, millisecondsToSamples,
 	biquadLPF, biquadHPF, biquadPeak, biquadHighShelf, biquadApply,
-} from "../src/lib/domain/dsp";
+} from "../../src/lib/domain/dsp";
 
 import {
 	sinc, evaluateWindow, buildWindowedSincTable,
 	resamplePolyphase, polyphaseOptionsForQuality, clearFilterCache,
-} from "../src/lib/domain/resampling";
+} from "../../src/lib/domain/resampling";
 
 import type {
 	PolyphaseOptions, WindowType,
-} from "../src/lib/domain/types";
+} from "../../src/lib/domain/types";
 
 let pass = 0;
 let fail = 0;

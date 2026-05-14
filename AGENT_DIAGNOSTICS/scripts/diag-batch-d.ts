@@ -5,8 +5,8 @@
 // Run: bun scripts/diag-batch-d.ts
 // Alternatively: npx tsx scripts/diag-batch-d.ts
 
-import { renderCoreExport } from "../src/lib/application/render-core-export";
-import type { ImpulseParams, LimiterParams } from "../src/lib/domain/types";
+import { renderCoreExport } from "../../src/lib/application/render-core-export";
+import type { ImpulseParams, LimiterParams } from "../../src/lib/domain/types";
 
 let pass = 0;
 let fail = 0;

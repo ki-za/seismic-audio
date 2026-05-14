@@ -3,7 +3,7 @@
 //
 // Usage: bun scripts/diag-batch-j.ts
 
-import { expanderWithComfortNoise, DEFAULT_EXPANDER } from "../src/lib/domain/expander";
+import { expanderWithComfortNoise, DEFAULT_EXPANDER } from "../../src/lib/domain/expander";
 
 let passed = 0;
 let failed = 0;

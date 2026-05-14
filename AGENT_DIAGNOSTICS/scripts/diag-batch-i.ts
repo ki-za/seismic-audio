@@ -3,7 +3,7 @@
 //
 // Usage: bun scripts/diag-batch-i.ts
 
-import { dynamicResonanceCut, DEFAULT_DYNAMIC_EQ } from "../src/lib/domain/dynamic-eq";
+import { dynamicResonanceCut, DEFAULT_DYNAMIC_EQ } from "../../src/lib/domain/dynamic-eq";
 
 let passed = 0;
 let failed = 0;

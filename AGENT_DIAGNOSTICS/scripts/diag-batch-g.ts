@@ -3,7 +3,7 @@
 //
 // Usage: bun scripts/diag-batch-g.ts
 
-import { relativeDeEsser, DEFAULT_DEESSER } from "../src/lib/domain/deesser";
+import { relativeDeEsser, DEFAULT_DEESSER } from "../../src/lib/domain/deesser";
 
 let passed = 0;
 let failed = 0;

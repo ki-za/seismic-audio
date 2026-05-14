@@ -6,19 +6,19 @@
 import {
 	clamp, dbToLinear, linearToDb,
 	smoothingCoefficient,
-} from "../src/lib/domain/dsp";
+} from "../../src/lib/domain/dsp";
 
-import { suppressImpulses } from "../src/lib/domain/impulse";
-import { lookAheadLimiter, softClip } from "../src/lib/domain/limiter";
+import { suppressImpulses } from "../../src/lib/domain/impulse";
+import { lookAheadLimiter, softClip } from "../../src/lib/domain/limiter";
 import {
 	measureIntegratedLUFS,
 	normalizeLoudness,
 	applyKWeightingFilter,
-} from "../src/lib/domain/loudness";
+} from "../../src/lib/domain/loudness";
 
 import type {
 	ImpulseParams, LimiterParams,
-} from "../src/lib/domain/types";
+} from "../../src/lib/domain/types";
 
 let pass = 0;
 let fail = 0;

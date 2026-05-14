@@ -1,13 +1,13 @@
 // ── Chunked DSP smoke test ──
 // Verifies prepareSamplesChunked produces identical output to prepareSamples
 // and reports progress correctly.
-// Run: bun run scripts/dsp-chunked-diag.ts
+// Run: bun run AGENT_DIAGNOSTICS/scripts/dsp-chunked-diag.ts
 
 import {
 	prepareSamples,
 	prepareSamplesChunked,
-} from "../src/lib/domain/sonification";
-import type { SoundMode } from "../src/lib/domain/types";
+} from "../../src/lib/domain/sonification";
+import type { SoundMode } from "../../src/lib/domain/types";
 
 let failures = 0;
 function assert(label: string, condition: boolean, detail?: string) {
