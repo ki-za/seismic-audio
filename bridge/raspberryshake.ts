@@ -97,11 +97,12 @@ export async function loadRaspberryShakeTrace(options: {
 	windowSeconds : number;
 	delayMinutes? : number;
 	channels?     : readonly string[];
+	startISO?     : string;
 }): Promise<SeismicTrace> {
 	const station      = stationConfigFor(options.station);
 	const delayMinutes = options.delayMinutes ?? DEFAULT_DELAY_MINUTES;
-	const end          = new Date(Date.now() - delayMinutes * 60_000);
-	const start        = new Date(end.getTime() - options.windowSeconds * 1000);
+	const start        = options.startISO ? new Date(options.startISO) : new Date(Date.now() - delayMinutes * 60_000 - options.windowSeconds * 1000);
+	const end          = new Date(start.getTime() + options.windowSeconds * 1000);
 	const channels     = options.channels ?? station.channels;
 	const attemptedChannels : ChannelAttempt[] = [];
 	let lastError           : unknown          = null;

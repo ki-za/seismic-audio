@@ -8,13 +8,14 @@ import {
 import { loadRaspberryShakeTrace } from "./raspberryshake";
 import { startSyntheticFeed } from "./synthetic";
 import { createStaticAppResponder } from "./static-app";
+import { MAX_PLAYBACK_SECONDS, MAX_WINDOW_SECONDS } from "../src/lib/domain/query-range";
 
-const udpPort  = Number.parseInt(Bun.env.UDP_PORT ?? "8888", 10);
-const httpPort = Number.parseInt(Bun.env.BRIDGE_PORT ?? "8787", 10);
-const mode     = (Bun.env.INPUT_MODE ?? "synthetic") as "synthetic" | "udp";
-const staticAppDir = Bun.env.PACKAGED_APP_DIR;
-const staticApp    = staticAppDir ? createStaticAppResponder(staticAppDir) : undefined;
-const recorder = new RollingRecorder({ sourceSampleRate: 100, maxHours: 72 });
+const udpPort       = Number.parseInt(Bun.env.UDP_PORT ?? "8888", 10);
+const httpPort      = Number.parseInt(Bun.env.BRIDGE_PORT ?? "8787", 10);
+const mode          = (Bun.env.INPUT_MODE ?? "synthetic") as "synthetic" | "udp";
+const staticAppDir  = Bun.env.PACKAGED_APP_DIR;
+const staticApp     = staticAppDir ? createStaticAppResponder(staticAppDir) : undefined;
+const recorder      = new RollingRecorder({ sourceSampleRate: 100, maxHours: 72 });
 
 if (mode === "synthetic") {
 	startSyntheticFeed(recorder);
@@ -53,16 +54,13 @@ const server = Bun.serve({
 		}
 
 		if (url.pathname === "/window") {
-			const windowSeconds = Number.parseFloat(
-				url.searchParams.get("windowSeconds") ?? "3600",
-			);
-			const playbackSeconds = Number.parseFloat(
-				url.searchParams.get("playbackSeconds") ?? "60",
-			);
+			const windowSeconds = parseBoundedSeconds(url.searchParams.get("windowSeconds"), 3600, MAX_WINDOW_SECONDS);
+			const playbackSeconds = parseBoundedSeconds(url.searchParams.get("playbackSeconds"), 60, MAX_PLAYBACK_SECONDS);
 			const channel = url.searchParams.get("channel") ?? undefined;
+			const startISO = url.searchParams.get("startISO") ?? undefined;
 			const quality = parseQuality(url.searchParams.get("quality"));
 			return Response.json(
-				recorder.makeWindow({ channel, windowSeconds, playbackSeconds, quality }),
+				recorder.makeWindow({ channel, windowSeconds, playbackSeconds, quality, startISO }),
 				{ headers: cors },
 			);
 		}
@@ -94,14 +92,11 @@ if (staticAppDir) console.log(`serving packaged app from ${staticAppDir}`);
 async function handleRaspberryShakeWindow(url: URL) {
 	try {
 		const station       = url.searchParams.get("station") ?? "RD432";
-		const windowSeconds = Number.parseFloat(
-			url.searchParams.get("windowSeconds") ?? "3600",
-		);
-		const playbackSeconds = Number.parseFloat(
-			url.searchParams.get("playbackSeconds") ?? "60",
-		);
+		const windowSeconds = parseBoundedSeconds(url.searchParams.get("windowSeconds"), 3600, MAX_WINDOW_SECONDS);
+		const playbackSeconds = parseBoundedSeconds(url.searchParams.get("playbackSeconds"), 60, MAX_PLAYBACK_SECONDS);
+		const startISO           = url.searchParams.get("startISO") ?? undefined;
 		const quality            = parseQuality(url.searchParams.get("quality"));
-		const trace              = await loadRaspberryShakeTrace({ station, windowSeconds });
+		const trace              = await loadRaspberryShakeTrace({ station, windowSeconds, startISO });
 		const renderedSampleRate = chooseRenderedSampleRate(
 			playbackSeconds,
 			quality,
@@ -134,6 +129,12 @@ async function handleRaspberryShakeWindow(url: URL) {
 			error: error instanceof Error ? error.message : String(error),
 		}, { status: 502, headers: cors });
 	}
+}
+
+function parseBoundedSeconds(value: string | null, fallback: number, max: number) {
+	const parsed = Number.parseFloat(value ?? String(fallback));
+	if (!Number.isFinite(parsed)) return fallback;
+	return Math.min(max, Math.max(1, parsed));
 }
 
 function parseQuality(value: string | null) {

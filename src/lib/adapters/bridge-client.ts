@@ -38,6 +38,7 @@ export async function getAudioWindow(
 	});
 	if (options.channel) params.set("channel", options.channel);
 	if (options.station) params.set("station", options.station);
+	if (options.startISO) params.set("startISO", options.startISO);
 
 	try {
 		const path =

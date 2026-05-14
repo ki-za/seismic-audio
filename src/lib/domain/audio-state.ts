@@ -16,6 +16,7 @@ export type AudioRequestKeyInput = {
 	windowSeconds   : number;
 	playbackSeconds : number;
 	renderQuality   : RenderQuality;
+	startISO?       : string;
 };
 
 export function buildRequestKey(input: AudioRequestKeyInput): string {
@@ -26,6 +27,7 @@ export function buildRequestKey(input: AudioRequestKeyInput): string {
 		windowSeconds   : input.windowSeconds,
 		playbackSeconds : input.playbackSeconds,
 		renderQuality   : input.renderQuality,
+		startISO        : input.startISO ?? "",
 	});
 }
 

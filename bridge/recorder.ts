@@ -65,6 +65,7 @@ export class RollingRecorder {
 		windowSeconds   : number;
 		playbackSeconds : number;
 		quality?        : RenderQuality;
+		startISO?       : string;
 	}): AudioWindow {
 		const channel =
 			options.channel ?? this.channels.keys().next().value ?? "SYN";
@@ -72,8 +73,10 @@ export class RollingRecorder {
 		const samplesNeeded = Math.floor(
 			options.windowSeconds * this.sourceSampleRate,
 		);
-		const source             = buffer?.samples ?? [];
-		const selected           = source.slice(Math.max(0, source.length - samplesNeeded));
+		const source = buffer?.samples ?? [];
+		const selected = options.startISO && buffer?.latestTimestampMs
+			? this.selectRange(source, buffer.latestTimestampMs, options.startISO, samplesNeeded)
+			: source.slice(Math.max(0, source.length - samplesNeeded));
 		const renderedSampleRate = chooseRenderedSampleRate(
 			options.playbackSeconds,
 			options.quality ?? "balanced",
@@ -88,6 +91,7 @@ export class RollingRecorder {
 			polyphaseOptionsForQuality(options.quality === "installation-safe" ? "preview" : "export"),
 		);
 
+		const startMs = options.startISO ? new Date(options.startISO).getTime() : undefined;
 		return {
 			channel,
 			windowSeconds    : options.windowSeconds,
@@ -96,6 +100,8 @@ export class RollingRecorder {
 			renderedSampleRate,
 			samples          : compressed,
 			availableSeconds : source.length / this.sourceSampleRate,
+			startISO         : startMs ? new Date(startMs).toISOString() : undefined,
+			endISO           : startMs ? new Date(startMs + options.windowSeconds * 1000).toISOString() : undefined,
 			source           : "bridge",
 			metadata: {
 				loadedAtISO      : new Date().toISOString(),
@@ -104,6 +110,20 @@ export class RollingRecorder {
 			},
 			metrics: measureSamples(compressed as unknown as number[], renderedSampleRate),
 		};
+	}
+
+	private selectRange(
+		source            : number[],
+		latestTimestampMs : number,
+		startISO          : string,
+		samplesNeeded     : number,
+	) {
+		const startMs       = new Date(startISO).getTime();
+		const earliestMs    = latestTimestampMs - ((source.length - 1) / this.sourceSampleRate) * 1000;
+		const startIndex    = Math.max(0, Math.floor((startMs - earliestMs) / 1000 * this.sourceSampleRate));
+		const boundedStart  = Math.min(source.length, startIndex);
+		const boundedEnd    = Math.min(source.length, boundedStart + samplesNeeded);
+		return source.slice(boundedStart, boundedEnd);
 	}
 }
 

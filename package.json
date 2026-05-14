@@ -14,6 +14,7 @@
     "diagnose": "bun run scripts/run-diagnostics.ts",
     "diagnose:dsp": "bun run scripts/dsp-chunked-diag.ts",
     "diagnose:domain": "bun run scripts/domain-diag.ts",
+    "diagnose:query-controls": "bun run scripts/query-controls-diag.ts",
     "diagnose:stations": "bun run scripts/station-catalog-diag.ts",
     "diagnose:windows-portable": "bun run scripts/diagnose-windows-portable.ts",
     "package:windows-portable": "bun run scripts/build-windows-portable.ts",

@@ -14,6 +14,7 @@ export type AudioWindowRequest = {
 	windowSeconds   : number;
 	playbackSeconds : number;
 	quality?        : RenderQuality;
+	startISO?       : string;
 };
 
 export type AudioWindowSource = {

@@ -5,6 +5,7 @@
 		type DspTuningState
 	} from '$lib/application/dsp-tuning';
 	import { initialLoadState, loadStateLabel } from '$lib/domain/load-state';
+	import { MAX_PLAYBACK_SECONDS, MAX_WINDOW_SECONDS, clampQuerySeconds, formatQueryDuration, isoFromDateTimeLocal, queryRangeSummary } from '$lib/domain/query-range';
 	import type { AppError } from '$lib/core/errors';
 	import type { LoadStateSnapshot } from '$lib/domain/load-state';
 	import type { ProviderInfo, SettingsComparison } from '$lib/composition/main';
@@ -14,15 +15,14 @@
 		{ label: '15 min', seconds: 15 * 60 },
 		{ label: '1 hour', seconds: 60 * 60 },
 		{ label: '6 hours', seconds: 6 * 60 * 60 },
-		{ label: '24 hours', seconds: 24 * 60 * 60 },
-		{ label: '48 hours', seconds: 48 * 60 * 60 },
-		{ label: '72 hours', seconds: 72 * 60 * 60 }
+		{ label: '12 hours', seconds: MAX_WINDOW_SECONDS }
 	];
 	const playbacks: PlaybackChoice[] = [
 		{ label: '10 sec', seconds: 10 },
 		{ label: '30 sec', seconds: 30 },
 		{ label: '1 min', seconds: 60 },
-		{ label: '5 min', seconds: 5 * 60 }
+		{ label: '5 min', seconds: 5 * 60 },
+		{ label: '15 min', seconds: MAX_PLAYBACK_SECONDS }
 	];
 	const soundModes: SoundMode[] = ['soft', 'clear', 'raw', 'deep', 'bright'];
 	const renderQualities: { label: string; value: RenderQuality; description: string }[] = [
@@ -54,6 +54,13 @@
 	let connection = $state('connecting');
 	let selectedWindowSeconds = $state(windows[1].seconds);
 	let selectedPlaybackSeconds = $state(playbacks[2].seconds);
+	let queryStartDate = $state(defaultStartParts(windows[1].seconds).date);
+	let queryStartTime = $state(defaultStartParts(windows[1].seconds).time);
+	let queryControlsOpen = $state(false);
+	let windowAmount = $state(1);
+	let windowUnit = $state<'minutes' | 'hours'>('hours');
+	let playbackAmount = $state(1);
+	let playbackUnit = $state<'seconds' | 'minutes'>('minutes');
 	let selectedStationId = $state(localStation.id);
 	let stationSearch = $state('');
 	let soundMode = $state<SoundMode>('soft');
@@ -82,16 +89,19 @@
 	const player = getAudioPlayer();
 	player.setLevelCallback((level) => (audioLevel = level));
 
-	const selectedWindow = $derived(windows.find((choice) => choice.seconds === selectedWindowSeconds) ?? windows[0]);
-	const selectedPlayback = $derived(playbacks.find((choice) => choice.seconds === selectedPlaybackSeconds) ?? playbacks[0]);
+	const selectedWindow = $derived(windows.find((choice) => choice.seconds === selectedWindowSeconds) ?? { label: formatQueryDuration(selectedWindowSeconds), seconds: selectedWindowSeconds });
+	const selectedPlayback = $derived(playbacks.find((choice) => choice.seconds === selectedPlaybackSeconds) ?? { label: formatQueryDuration(selectedPlaybackSeconds), seconds: selectedPlaybackSeconds });
 	const visibleArchiveStations = $derived(searchStations(raspberryShakeStations, stationSearch, favouriteStationIds, 30).map(toStationChoice));
 	const selectedStation = $derived(selectedStationId === localStation.id ? localStation : archiveStationsById.get(selectedStationId) ?? favouriteStations[0] ?? localStation);
+	const queryStartISO = $derived(isoFromDateTimeLocal(queryStartDate, queryStartTime));
+	const querySummary = $derived(queryRangeSummary({ startISO: queryStartISO, windowSeconds: selectedWindowSeconds, playbackSeconds: selectedPlaybackSeconds }));
+	const queryIsValid = $derived(selectedWindowSeconds <= MAX_WINDOW_SECONDS && selectedPlaybackSeconds <= MAX_PLAYBACK_SECONDS);
 	const compressionText = $derived(`${selectedWindow.label} → ${selectedPlayback.label}`);
 	const availabilityText = $derived(selectedStation.id === 'local' ? (status ? formatDuration(status.secondsStored) : 'no data yet') : 'archive request uses now - 35 min');
 	const bridgeText = $derived(status ? `${status.samplesStored.toLocaleString()} local samples · ${status.channels.join(', ') || 'no local channel yet'}` : 'waiting for bridge');
 	const activeChannel = $derived(selectedStation.id === 'local' ? (status?.channels[0] ?? selectedStation.channelHint) : selectedStation.channelHint.split('.').pop() ?? selectedStation.channelHint);
 	const selectedQuality = $derived(renderQualities.find((choice) => choice.value === renderQuality) ?? renderQualities[1]);
-	const selectedRequestKey = $derived(buildRequestKey({ provider: selectedStation.id === 'local' ? 'bridge' : 'raspberryshake', stationId: selectedStation.id, channel: selectedStation.id === 'local' ? status?.channels[0] : undefined, windowSeconds: selectedWindowSeconds, playbackSeconds: selectedPlaybackSeconds, renderQuality }));
+	const selectedRequestKey = $derived(buildRequestKey({ provider: selectedStation.id === 'local' ? 'bridge' : 'raspberryshake', stationId: selectedStation.id, channel: selectedStation.id === 'local' ? status?.channels[0] : undefined, windowSeconds: selectedWindowSeconds, playbackSeconds: selectedPlaybackSeconds, renderQuality, startISO: queryStartISO }));
 	const selectedFingerprint = $derived(fingerprintAudioSettings(buildAudioSettingsSnapshot({ soundMode, listeningFocus, compression, renderQuality, playbackSeconds: selectedPlaybackSeconds, renderedSampleRate: lastAudioWindow?.renderedSampleRate ?? 0 })));
 	const loadedStateDerived = $derived(loadStateLabel(loadState.state));
 	const loadedState = $derived(isLoading ? 'loading' : loadState.state);
@@ -243,11 +253,32 @@
 		}
 	}
 
+	function applyWindowSeconds(seconds: number) {
+		selectedWindowSeconds = clampQuerySeconds({ windowSeconds: seconds, playbackSeconds: selectedPlaybackSeconds }).windowSeconds;
+		windowAmount = selectedWindowSeconds >= 3600 ? selectedWindowSeconds / 3600 : selectedWindowSeconds / 60;
+		windowUnit = selectedWindowSeconds >= 3600 ? 'hours' : 'minutes';
+	}
+
+	function applyPlaybackSeconds(seconds: number) {
+		selectedPlaybackSeconds = clampQuerySeconds({ windowSeconds: selectedWindowSeconds, playbackSeconds: seconds }).playbackSeconds;
+		playbackAmount = selectedPlaybackSeconds >= 60 ? selectedPlaybackSeconds / 60 : selectedPlaybackSeconds;
+		playbackUnit = selectedPlaybackSeconds >= 60 ? 'minutes' : 'seconds';
+	}
+
+	function applyGranularWindow() {
+		applyWindowSeconds(windowAmount * (windowUnit === 'hours' ? 3600 : 60));
+	}
+
+	function applyGranularPlayback() {
+		applyPlaybackSeconds(playbackAmount * (playbackUnit === 'minutes' ? 60 : 1));
+	}
+
 	function makeAudioRequest() {
 		return {
 			windowSeconds: selectedWindowSeconds,
 			playbackSeconds: selectedPlaybackSeconds,
 			quality: renderQuality,
+			startISO: queryStartISO,
 			...(selectedStation.id === 'local'
 				? { source: 'bridge' as const, channel: status?.channels[0] }
 				: { source: 'raspberryshake' as const, station: selectedStation.id })
@@ -277,6 +308,14 @@
 		return `${(seconds / 3600).toFixed(1)} hr`;
 	}
 
+	function defaultStartParts(windowSeconds: number) {
+		const date = new Date(Date.now() - 35 * 60_000 - windowSeconds * 1000);
+		return {
+			date: date.toISOString().slice(0, 10),
+			time: date.toTimeString().slice(0, 5)
+		};
+	}
+
 </script>
 
 <svelte:document onfullscreenchange={() => (showMode = Boolean(document.fullscreenElement))} />
@@ -284,7 +323,7 @@
 <main class={showMode ? 'show' : ''}>
 	<section class="hero">
 		<p class="eyebrow">Seismic Audio Dashboard</p>
-		<h1>Listening to compressed earth time.</h1>
+		<h1>7 Signals.</h1>
 		<p class="subtle">{selectedStation.name} · {compressionText} · {selectedQuality.label}. Recorded: {availabilityText}.</p>
 	</section>
 
@@ -371,22 +410,43 @@
 				{/if}
 			</div>
 
-			<div class="group">
-				<p>Time window</p>
-				<div class="buttons">
-					{#each windows as choice (choice.seconds)}
-						<button class={choice.seconds === selectedWindowSeconds ? 'selected' : ''} onclick={() => (selectedWindowSeconds = choice.seconds)}>{choice.label}</button>
-					{/each}
+			<div class="group wide query-panel">
+				<p>Query <small>max 12h data · 15m compressed</small></p>
+				<div class="query-section">
+					<span>Quick source range</span>
+					<div class="buttons">
+						{#each windows as choice (choice.seconds)}
+							<button class={choice.seconds === selectedWindowSeconds ? 'selected' : ''} onclick={() => applyWindowSeconds(choice.seconds)}>{choice.label}</button>
+						{/each}
+					</div>
 				</div>
-			</div>
-
-			<div class="group">
-				<p>Playback duration</p>
-				<div class="buttons">
-					{#each playbacks as choice (choice.seconds)}
-						<button class={choice.seconds === selectedPlaybackSeconds ? 'selected' : ''} onclick={() => (selectedPlaybackSeconds = choice.seconds)}>{choice.label}</button>
-					{/each}
+				<div class="query-section">
+					<span>Quick compress into</span>
+					<div class="buttons">
+						{#each playbacks as choice (choice.seconds)}
+							<button class={choice.seconds === selectedPlaybackSeconds ? 'selected' : ''} onclick={() => applyPlaybackSeconds(choice.seconds)}>{choice.label}</button>
+						{/each}
+					</div>
 				</div>
+				<p class="readout">{querySummary.windowLabel} earth time → {querySummary.playbackLabel} audio · {querySummary.compressionRatio}</p>
+				<button class="dsp-toggle" onclick={() => (queryControlsOpen = !queryControlsOpen)}>
+					<span class="dsp-arrow">{queryControlsOpen ? '▾' : '▸'}</span>
+					More granular controls
+				</button>
+				{#if queryControlsOpen}
+					<div class="granular-query">
+						<label>Data starts at date <input type="date" bind:value={queryStartDate} /></label>
+						<label>Data starts at time <input type="time" bind:value={queryStartTime} /></label>
+						<label>Request length <input type="number" min="1" max={windowUnit === 'hours' ? 12 : 720} step="0.25" bind:value={windowAmount} oninput={applyGranularWindow} /></label>
+						<label>Unit <select bind:value={windowUnit} onchange={applyGranularWindow}><option value="minutes">minutes</option><option value="hours">hours</option></select></label>
+						<label>Compress into <input type="number" min="1" max={playbackUnit === 'minutes' ? 15 : 900} step="1" bind:value={playbackAmount} oninput={applyGranularPlayback} /></label>
+						<label>Unit <select bind:value={playbackUnit} onchange={applyGranularPlayback}><option value="seconds">seconds</option><option value="minutes">minutes</option></select></label>
+						<p class="readout">Range: {queryStartISO} → {querySummary.endISO}</p>
+						{#if !queryIsValid}
+							<p class="readout error">Maximum request is 12 hours of data and 15 minutes of compressed audio.</p>
+						{/if}
+					</div>
+				{/if}
 			</div>
 
 			<div class="group">
@@ -489,7 +549,7 @@
 		</div>
 
 		<div class="actions">
-			<button data-testid="load-window" onclick={loadWindowAction} disabled={isLoading}>{isLoading ? 'Loading…' : 'Load Window'}</button>
+			<button data-testid="load-window" onclick={loadWindowAction} disabled={isLoading || !queryIsValid}>{isLoading ? 'Loading…' : 'Load Window'}</button>
 			<button class="primary" data-testid="begin-listening" onclick={playLoaded} disabled={playPhase === 'loading' || playPhase === 'rendering' || playPhase === 'starting'}>
 				{playPhase === 'loading' ? 'Loading window…' : playPhase === 'rendering' ? `Processing samples… ${dspProgress}%` : playPhase === 'starting' ? 'Starting audio…' : isPlaying ? 'Restart Loaded Loop' : 'Play Loaded Loop'}
 			</button>
